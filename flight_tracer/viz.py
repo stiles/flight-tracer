@@ -110,7 +110,15 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     points_3857 = gdf_points.to_crs(epsg=3857)
     lines_3857 = gdf_lines.to_crs(epsg=3857) if gdf_lines is not None and not gdf_lines.empty else None
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig = plt.figure(figsize=figsize)
+
+    # Reserve fixed panels for the headline/dek and the source line, in figure
+    # fractions. The rest is the map. Setting the axes' position explicitly
+    # (rather than plt.subplots + tight_layout) means we know exactly how many
+    # inches the map panel gets, so the geographic extent can be pre-padded to
+    # that panel's aspect ratio below.
+    top, bottom, left, right = 0.85, 0.06, 0.02, 0.98
+    ax = fig.add_axes([left, bottom, right - left, top - bottom])
 
     legs = points_3857["flight_leg"].unique() if "flight_leg" in points_3857.columns else [None]
     multi_leg = len(legs) > 1
@@ -135,25 +143,45 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     xmin, ymin, xmax, ymax = points_3857.total_bounds
     x_pad = max((xmax - xmin) * pad_factor, 500)
     y_pad = max((ymax - ymin) * pad_factor, 500)
+    data_w = (xmax - xmin) + 2 * x_pad
+    data_h = (ymax - ymin) + 2 * y_pad
+
+    # geopandas' .plot() forces an equal-aspect axes (correctly -- geographic
+    # data shouldn't stretch). Left alone, matplotlib satisfies that by
+    # shrinking whichever side of the axes box doesn't match the data's
+    # aspect ratio, which then throws off the saved image's actual
+    # dimensions once combined with a tight bbox. Padding the extent to the
+    # panel's own aspect ratio first means equal-aspect has nothing to
+    # shrink, so the map fills the whole panel and the output stays the
+    # requested landscape shape.
+    panel_aspect = (figsize[0] * (right - left)) / (figsize[1] * (top - bottom))
+    data_aspect = data_w / data_h
+    if data_aspect > panel_aspect:
+        target_h = data_w / panel_aspect
+        y_pad += (target_h - data_h) / 2
+    else:
+        target_w = data_h * panel_aspect
+        x_pad += (target_w - data_w) / 2
+
     ax.set_xlim(xmin - x_pad, xmax + x_pad)
     ax.set_ylim(ymin - y_pad, ymax + y_pad)
+    ax.set_aspect("equal", adjustable="box")
 
     credit = _add_basemap(ax, background, zoom=zoom)
 
     ax.set_axis_off()
     ax.legend(loc="lower right", fontsize=9, frameon=True, facecolor="white", framealpha=0.85)
 
-    fig.text(0.02, 0.98, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
+    fig.text(0.02, 0.97, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
     if dek:
-        fig.text(0.02, 0.935, dek, fontsize=11, color=COLOR_TEXT, va="top", wrap=True)
+        fig.text(0.02, 0.915, dek, fontsize=11, color=COLOR_TEXT, va="top", wrap=True)
 
     source_line = source or ""
     if credit:
         source_line = f"{source_line} Basemap: {credit}." if source_line else f"Basemap: {credit}."
-    fig.text(0.02, 0.01, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
+    fig.text(0.02, 0.02, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.92])
-    _save(fig, output_path)
+    _save(fig, output_path, tight=False)
 
 
 def plot_series(df, value_col, title, ylabel, output_path, source="",
@@ -189,9 +217,9 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
     _save(fig, output_path)
 
 
-def _save(fig, output_path):
+def _save(fig, output_path, tight=True):
     import os
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=200, bbox_inches="tight" if tight else None)
     plt.close(fig)
     print(f"Saved {output_path}")
