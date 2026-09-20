@@ -142,20 +142,23 @@ def trace(icao, n_number, url, start, end, date, recent, timezone, output,
                    f"(UTC: {summary['first_contact_utc']} to {summary['last_contact_utc']})")
         else:
             dek = f"Tracked {summary.get('first_contact_utc')} to {summary.get('last_contact_utc')}"
-        source = "Source: ADS-B Exchange"
-        if summary.get("has_multilaterated_positions"):
-            source += " \u2014 some positions are multilaterated estimates"
+        multilaterated_note = " \u2014 some positions are multilaterated estimates" if summary.get("has_multilaterated_positions") else ""
+        # plot_map credits the basemap tiles on its own, so it gets the bare
+        # data-source label; the charts have no basemap, so they get a
+        # complete "Source:" line.
+        flight_source_label = f"ADS-B Exchange{multilaterated_note}"
+        chart_source = f"Source: ADS-B Exchange{multilaterated_note}"
 
         map_path = os.path.join(output_dir, "map.png")
-        plot_map(gdf, gdf_lines, headline, dek, source, map_path, background=background)
+        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background)
         written["map"] = map_path
 
         alt_path = os.path.join(output_dir, "altitude.png")
-        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=source)
+        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=chart_source)
         written["altitude_chart"] = alt_path
 
         speed_path = os.path.join(output_dir, "speed.png")
-        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=source)
+        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=chart_source)
         written["speed_chart"] = speed_path
 
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")

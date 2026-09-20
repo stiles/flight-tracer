@@ -161,7 +161,7 @@ summary = tracer.summarize(gdf)
 print(tracer.headline_for(summary))
 
 written, gdf_lines = tracer.write_outputs(gdf, "data/a40442")
-plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "Source: ADS-B Exchange",
+plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "ADS-B Exchange",
           "data/a40442/map.png")
 plot_series(gdf, "altitude", "Altitude", "Feet", "data/a40442/altitude.png")
 ```

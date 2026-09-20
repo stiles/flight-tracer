@@ -114,7 +114,13 @@ def _add_basemap(ax, background, zoom=None):
 
 def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
              background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None):
-    """Plot a flight trace: route, start/end markers, basemap and CNN-style chrome."""
+    """Plot a flight trace: route, start/end markers, basemap and CNN-style chrome.
+
+    `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
+    not a full sentence -- the basemap's own credit is added automatically,
+    so the saved source line reads "Sources: ADS-B Exchange (flight); Esri
+    (basemap)" rather than crediting only one of the two things on the map.
+    """
     if gdf_points.crs is None:
         gdf_points = gdf_points.set_crs(epsg=4326)
     points_3857 = gdf_points.to_crs(epsg=3857)
@@ -186,9 +192,22 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     if dek:
         fig.text(0.02, 0.915, dek, fontsize=11, color=COLOR_TEXT, va="top", wrap=True)
 
-    source_line = source or ""
+    # A map draws on two attributions -- the flight data and the basemap
+    # tiles -- so credit both by name rather than bolting "Basemap: X" onto
+    # a "Source:" line meant for one.
+    attributions = []
+    if source:
+        attributions.append(f"{source} (flight)")
     if credit:
-        source_line = f"{source_line} Basemap: {credit}" if source_line else f"Basemap: {credit}"
+        attributions.append(f"{credit} (basemap)")
+
+    if len(attributions) > 1:
+        source_line = "Sources: " + "; ".join(attributions)
+    elif attributions:
+        source_line = f"Source: {attributions[0].split(' (')[0]}"
+    else:
+        source_line = ""
+
     fig.text(0.02, 0.02, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
 
     _save(fig, output_path, tight=False)

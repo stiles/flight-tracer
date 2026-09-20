@@ -38,7 +38,7 @@ else:
         gdf, gdf_lines,
         headline=f"{summary['registration']} \u2014 {summary['description']}",
         dek=f"Tracked {summary['first_contact_utc']} to {summary['last_contact_utc']}",
-        source="Source: ADS-B Exchange",
+        source="ADS-B Exchange",  # plot_map credits the basemap on its own
         output_path=f"{output_dir}/map.png",
     )
     plot_series(gdf, "altitude", "Altitude", "Feet", f"{output_dir}/altitude.png")
