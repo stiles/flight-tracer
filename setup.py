@@ -6,10 +6,10 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="flight-tracer",
-    version="0.1.7",
+    version="0.2.0",
     author="Matt Stiles",
     author_email="mattstiles@gmail.com",
-    description="A package to fetch, process, store and plot aircraft trace data from ADS-B Exchange",
+    description="Turn an N-number, ICAO hex or ADS-B Exchange URL into a mapped, summarized flight trace in one command",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/stiles/flight-tracer",
@@ -21,10 +21,14 @@ setup(
         "boto3",
         "matplotlib",
         "contextily",
+        "xyzservices",
         "shapely",
         "click",
         "pytz"
     ],
+    extras_require={
+        "faa": ["hangarbay"],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: Public Domain",

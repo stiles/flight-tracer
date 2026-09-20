@@ -1,278 +1,211 @@
-# FlightTracer: Tracking ADS-B Exchange flights
+# FlightTracer: tracking ADS-B Exchange flights
 
 [![PyPI version](https://img.shields.io/pypi/v/flight-tracer.svg)](https://pypi.org/project/flight-tracer/)
 [![License: CC0-1.0](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/)
 
-FlightTracer is a Python package for fetching, processing, storing and plotting flight trace data from [ADS-B Exchange](https://globe.adsbexchange.com/). It provides tools for managing flight data and offers flexible options for users. The project is new and under development.
+FlightTracer turns whatever you have about an aircraft — an N-number, an ICAO hex, or a pasted [ADS-B Exchange](https://globe.adsbexchange.com/) URL — into a mapped, summarized flight trace in one command.
 
 ---
 
-## Features
+## Pick the right entry point
 
-- Fetches flight trace data from ADS-B Exchange
-- Identifies flight legs by detecting time gaps and handling Zulu day transitions
-- Converts raw flight trace data into GeoDataFrames for easy analysis
-- Saves processed flight data in CSV, GeoJSON or shapefile formats
-- Visualizes flight paths with customizable basemaps and clear leg differentiation
-- Supports AWS S3 uploads for cloud storage
-- Offers customization options for file formats and filtering
-- **Now includes a command-line interface (CLI) for easy execution**
+Start from what you have, not from a list of steps.
 
----
+| You have | Run |
+|---|---|
+| An N-number from a reporter or scanner traffic | `flight-tracer trace --n-number N358TV` |
+| An ICAO hex you spotted on the globe | `flight-tracer trace --icao a40442` |
+| A URL someone sent you from globe.adsbexchange.com | `flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442"` |
+| Just the tail number, no ICAO handy | `flight-tracer resolve --n-number N358TV` (prints the hex without fetching anything) |
+
+Each of those is the whole workflow: fetch, decode legs, map, chart, summarize. There's no separate `process` or `export` step, and no filename to remember — everything for one run lands in one folder.
 
 ## Installation
-
-FlightTracer is available on PyPI and can be installed using:
 
 ```bash
 pip install flight-tracer
 ```
 
-Alternatively, install the latest development version from GitHub:
+N-number lookups need the FAA registry client, [hangarbay](https://pypi.org/project/hangarbay/):
 
 ```bash
-pip install git+https://github.com/stiles/flight_tracer.git
+pip install flight-tracer[faa]
 ```
 
-### Dependencies
-
-FlightTracer requires the following Python packages:
-- `requests`
-- `pandas`
-- `geopandas`
-- `boto3`
-- `matplotlib`
-- `contextily`
-- `shapely`
-- `click` (for CLI support)
-
-These dependencies will be installed automatically with `pip`.
+Without it, `--icao` and `--url` still work; `--n-number` raises a clear error telling you to install it.
 
 ---
 
-## Using FlightTracer via CLI
+## The newsroom scenarios this is built for
 
-With the new CLI support, FlightTracer can be run directly from the command line.
+**A helicopter crash. You have an N-number.**
 
-### **CLI options overview**
-
-| Option            | Description |
-|------------------|-------------|
-| `--icao`         | ICAO aircraft ID (required, can be multiple) |
-| `--start`        | Start date (YYYY-MM-DD) |
-| `--end`          | End date (YYYY-MM-DD) |
-| `--output`       | Directory for saving fetched data |
-| `--input`        | Path to input file for processing/exporting/uploading |
-| `--format`       | Output format: `csv`, `geojson`, `shp` |
-| `--filter-ground` | Filter out ground-level points (default: True) |
-| `--plot`         | Generate a visualization of the flight trace |
-| `--bucket`       | AWS S3 bucket name for uploads |
-| `--aws-profile`  | AWS profile for authentication when uploading |
-
-These commands ensure seamless of FlightTracer's features via the command line.
-
-### **Basic command: Fetch raw flight trace data**
 ```bash
-flight-tracer fetch --icao A11F59 --start 2025-02-07 --end 2025-02-08 --output data/
+flight-tracer trace --n-number N358TV
 ```
-This fetches flight data for aircraft `A11F59` for the given date range and saves it as a CSV file.
 
-### **Processing fetched data**
-```bash
-flight-tracer process --input data/raw_A11F59_2025-02-07_2025-02-08.csv --filter-ground
-```
-This processes the fetched flight trace data, filtering out ground-level points and saving the result in a structured format.
+This resolves the N-number to its ICAO hex via the FAA registry, then fetches ADS-B Exchange's *recent* trace — roughly the last few hours to a few days of coverage, no date required. That's the breaking-news default: you don't know the date yet, you just know it was recent.
 
-### **Exporting processed data**
-```bash
-flight-tracer export --input data/processed_A11F59_2025-02-07_2025-02-08.geojson --format geojson
-```
-This exports the processed flight data in GeoJSON format (CSV and shapefile options are also available).
+**You can see an aircraft on the globe and have its ICAO hex.**
 
-### **Plotting the flight trace**
 ```bash
-flight-tracer plot --input data/processed_A11F59_2025-02-07_2025-02-08.geojson --output visuals/flight_map_A11F59_2025-02-07_2025-02-08.png
+flight-tracer trace --icao a40442
 ```
-This generates a visualization of the flight trace and saves it as an image file.
 
-### **Uploading processed data to AWS S3**
+Same recent-trace default. If it's not recent — the aircraft flew hours or days ago and dropped out of the short-lived recent trace — add a date:
+
 ```bash
-flight-tracer upload --input data/processed_A11F59_2025-02-07_2025-02-08.geojson --bucket my-bucket --aws-profile my-profile
+flight-tracer trace --icao a40442 --date 2026-09-14
+# or a range:
+flight-tracer trace --icao a40442 --start 2026-09-10 --end 2026-09-14
 ```
-This uploads the processed flight trace data to the specified AWS S3 bucket using the provided AWS profile.
+
+**Someone sends you a globe.adsbexchange.com link.**
+
+```bash
+flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442&lat=34.251&lon=-118.614&zoom=7.0"
+```
+
+The `icao` and `replay` date come straight out of the URL — nothing to retype. A live link with no `replay` param (just `?icao=...`) is treated as recent, same as the bare `--icao` case.
+
+## What one run produces
+
+```
+data/a40442_2026-09-16_2026-09-16/
+├── trace.csv        # every point: time (UTC + local), lat/lon, altitude, speed, leg
+├── points.geojson
+├── line.geojson      # one LineString per flight leg
+├── map.png           # route over a basemap, start/end markers, headline + dek
+├── altitude.png      # altitude over time
+├── speed.png         # ground speed over time
+└── summary.json      # the plain-English answer to "what is this, and when"
+```
+
+Every run also prints the headline straight to the terminal:
+
+```
+N358TV (AEROSPATIALE AS-350 Ecureuil, hex a40442)
+Tracked 2026-09-15 17:23:28 PDT → 2026-09-15 18:55:25 PDT (91.9 min, 1 leg)
+```
+
+Both a UTC and a local timestamp are always in `summary.json` and the CSV — "what time did this happen" doesn't require a manual `pytz` conversion. Local zone defaults to `America/Los_Angeles`; pass `--timezone "America/New_York"` (any IANA zone) for anywhere else.
+
+### Flight legs, decoded rather than guessed
+
+Earlier versions split legs by a configurable time-gap threshold. ADS-B Exchange already marks the start of each leg in its own data (`flags & 2` in the raw trace, its own landing/takeoff detector), so FlightTracer just reads that flag instead of guessing from a gap in timestamps. Nothing to tune.
+
+### Basemaps
+
+Default is `esri-light`, a quiet gray canvas that lets the route carry the map. Other options: `osm`, `esri-street`, `esri-topo`, `esri-satellite`, `esri-natgeo`. Carto withdrew anonymous tile access, so any old `carto`/`positron` reference is mapped onto `esri-light` automatically rather than silently failing.
+
+```bash
+flight-tracer trace --icao a40442 --background esri-satellite
+```
 
 ---
+
+## Full CLI options
+
+```
+flight-tracer trace
+  --icao HEX              ICAO hex code. Repeatable.
+  --n-number TAIL          FAA tail number, e.g. N358TV. Repeatable. Requires flight-tracer[faa].
+  --url URL                A globe.adsbexchange.com URL to parse.
+  --start / --end DATE     Historical date range (YYYY-MM-DD).
+  --date DATE              Shorthand for --start/--end on the same day.
+  --recent                 Force the recent-trace endpoint even if a date was found or given.
+  --timezone ZONE          IANA zone for local times. Default: America/Los_Angeles.
+  --output DIR             Parent directory for the run's output folder. Default: data.
+  --filter-ground          Drop ground points (default). --keep-ground to disable.
+  --background NAME        Basemap. Default: esri-light.
+  --formats LIST           Comma list: csv,geojson,shp. Default: csv,geojson.
+  --no-plots               Skip map/chart rendering; write data only.
+  --bucket NAME            Upload the output folder to this S3 bucket.
+  --aws-profile NAME       AWS profile for --bucket uploads.
+
+flight-tracer resolve --n-number TAIL
+  Print the ICAO hex, aircraft type and registered owner for a tail number.
+```
 
 ## Using FlightTracer in Python
 
-FlightTracer can also be used as a Python library for more flexibility.
-
-### **Basic example**
-
 ```python
 from flight_tracer import FlightTracer
-from datetime import date
+from flight_tracer.viz import plot_map, plot_series
 
-# Initialize the FlightTracer with an aircraft ID
-tracer = FlightTracer(aircraft_ids=["A11F59"])
+tracer = FlightTracer(aircraft_ids=["a40442"])
+raw_df = tracer.get_traces(recent=True)                  # or (start_date, end_date)
 
-# Define the date range for fetching trace data
-start = date(2025, 2, 7)
-end = date(2025, 2, 8)
+gdf = tracer.process_flight_data(raw_df, timezone="America/Los_Angeles")
+summary = tracer.summarize(gdf)
+print(tracer.headline_for(summary))
 
-# Fetch flight data
-raw_df = tracer.get_traces(start, end)
-
-# Process the raw data into a GeoDataFrame
-if not raw_df.empty:
-    gdf = tracer.process_flight_data(raw_df)
-    print(gdf.head())
+written, gdf_lines = tracer.write_outputs(gdf, "data/a40442")
+plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "Source: ADS-B Exchange.",
+          "data/a40442/map.png")
+plot_series(gdf, "altitude", "Altitude", "Feet", "data/a40442/altitude.png")
 ```
 
-### **Converting to a Specific Time Zone**
-By default, ADS-B times are in UTC. Users can convert `point_time` to their local time zone as needed:
+### Resolving an N-number or a URL yourself
 
 ```python
-import pytz
+from flight_tracer import resolve_n_number, parse_adsbx_url
 
-# Convert to US/Pacific Time
-gdf["point_time_pacific"] = gdf["point_time"].dt.tz_localize("UTC").dt.tz_convert("US/Pacific")
+info = resolve_n_number("N358TV")
+# {'icao': 'a40442', 'n_number': 'N358TV', 'maker': 'EUROCOPTER', 'model': 'AS 350 B2', 'owner_name': '...'}
 
-# Convert to Eastern Time
-gdf["point_time_eastern"] = gdf["point_time"].dt.tz_localize("UTC").dt.tz_convert("America/New_York")
+info = parse_adsbx_url("https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442")
+# {'icao': 'a40442', 'date': date(2026, 9, 16), 'time': '01:58', 'lat': None, 'lon': None, 'zoom': None}
 ```
 
-To see all available time zones:
+### Fleets: several aircraft in one call
+
 ```python
-import pytz
-print(pytz.all_timezones)
+tracer = FlightTracer(aircraft_ids=["a40442", "ac308f", "ae4af6"])
+# or from a hosted list:
+tracer = FlightTracer(meta_url="https://stilesdata.com/lapd-helicopters/lapd_aircraft.json")
+
+raw_df = tracer.get_traces(recent=True)
+gdf = tracer.process_flight_data(raw_df)
+for icao in gdf["icao"].unique():
+    print(tracer.headline_for(tracer.summarize(gdf[gdf["icao"] == icao])))
 ```
 
----
+### AWS S3
 
-### Customizing output
-
-FlightTracer provides options to save data in different formats and configure the output directory:
-
-#### **Supported file formats**
-- CSV
-- GeoJSON
-- Esri shapefile
-
-#### **Example: Exporting data**
 ```python
-# Save processed data locally
-tracer.export_flight_data(gdf, base_path="data/flight_traces", export_format="geojson") # or "shp"
-```
----
-
-### **AWS S3 integration**
-
-Easily upload processed data to AWS S3 for cloud storage. Provide your AWS credentials or use an AWS profile:
-
-#### **Example: Uploading to S3**
-```python
-aws_creds = {
-    "aws_access_key_id": "your-access-key",
-    "aws_secret_access_key": "your-secret-key"
-}
-
-tracer.upload_to_s3(
-    gdf,
-    bucket_name="your-bucket",
-    csv_object_name="flight_data.csv",
-    geojson_object_name="flight_data.geojson"
-)
+tracer.upload_directory_to_s3("data/a40442_2026-09-16_2026-09-16", "my-bucket", prefix="flight_tracer")
 ```
 
----
-
-## **Advanced features**
-
-### **Metadata mapping**
-Enrich your flight data with custom metadata using mapping options.
-
-#### **Example: Adding metadata**
-```python
-meta_df = pd.DataFrame({
-    "flight": ["AAL124", "UAL1053"],
-    "airline": ["American Airlines", "United Airlines"]
-})
-mapping_info = (meta_df, "flight", "airline", "airline")
-
-# Pass mapping_info to process_flight_data
-gdf = tracer.process_flight_data(raw_df, mapping_info=mapping_info)
-```
-
-### **Custom time thresholds for legs**
-Customize the time gap threshold for detecting new flight legs:
-
-#### **Example: Adjusting time gap threshold**
-```python
-tracer.set_time_gap_threshold(minutes=45)
-```
+Or from the CLI: `flight-tracer trace --icao a40442 --bucket my-bucket --aws-profile my-profile`.
 
 ---
 
-## Outputs
+## Notes on the data
 
-The example above would output two GeoJSON files: One with point features for each moment captured during the aircraft's flight and another with lines representing the overall route(s). Legs of the flights are differentiated in the `flight_leg` item. The script also outputs a CSV and a simple map plot.
-
-```json
-"features": [
-    {
-        "type": "Feature",
-        "properties": {
-            "point_time": "2025-02-08T02:38:02.920",
-            "flight_date_pst": "2025-02-07",
-            "altitude": "30000",
-            "ground_speed": 408.4,
-            "heading": 253.2,
-            "lat": 35.968307,
-            "lon": -97.348509,
-            "icao": "a11f59",
-            "call_sign": "UAL333",
-            "leg_id": 1,
-            "flight_leg": "UAL333_leg1"
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [
-                -97.348509,
-                35.968307
-            ]
-        }
-    }
-]
-```
-
-**Notes:**
-
-- Values such as altitude and ground speed are raw and uncorrected
-- ADS-B datetimes are UTC, or Zulu, but FlightTracer users can concert that to a local time zone.
-
-The plot has different colors for the various legs that day to help you identify them more clearly as you use the data for more advanced visualizations using QGIS or other tools.
-
-![alt text](https://github.com/stiles/flight-tracer/raw/main/visuals/flight_map_a11f59_20250208.png)
+- Values such as altitude and ground speed are raw and uncorrected.
+- `has_multilaterated_positions` in the summary flags when part of a track came from multilateration rather than a direct ADS-B position — expect noisier speed readings in those stretches.
+- ADS-B datetimes are UTC (Zulu); every output also carries the requested local zone, so nothing needs a manual conversion downstream.
 
 ---
 
-## **Roadmap**
+## Roadmap
 
-- **CLI option**: Add a command-line interface for easier usage
-- **Improved metadata integration**: Automatically enrich flight data with external sources (e.g., FAA, ICAO)
-- **Parallel processing**: Optimize for large datasets
-- **Better visualizations**: Add support for tools like Altair or Plotly
-- **Analysis tools**: Better understand a flight's speed and altitude changes
-
----
-
-## **Credits**
-Thanks to [ADS-B Exchange](https://globe.adsbexchange.com/) for providing open flight data. Please consider supporting their service by [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/).
+- Metadata enrichment beyond the FAA registry (e.g. ICAO aircraft-type lookups)
+- Parallel fetching for large fleets
+- Mapbox-backed basemaps for house-style GL maps
+- Overflight/noise-style analysis helpers
 
 ---
 
-## **License**
+## Credits
+
+Thanks to [ADS-B Exchange](https://globe.adsbexchange.com/) for providing open flight data. Consider [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/).
+
+N-number resolution uses [hangarbay](https://pypi.org/project/hangarbay/), an FAA aircraft registry client.
+
+## License
+
 This project is licensed under the **Creative Commons CC0 1.0 Universal** Public Domain Dedication.
 
 [![CC0 Badge](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/legalcode)

@@ -1,111 +1,174 @@
-import click
+import json
 import os
-import pandas as pd
-import geopandas as gpd
-from datetime import date
-from flight_tracer import FlightTracer
+from datetime import datetime
+
+import click
+
+from flight_tracer.core import DEFAULT_TIMEZONE, FlightTracer
+from flight_tracer.identify import parse_adsbx_url, resolve_n_number
+from flight_tracer.viz import plot_map, plot_series
+
 
 @click.group()
 def cli():
-    """FlightTracer: Fetch, process, store and plot ADS-B Exchange flight data."""
+    """FlightTracer: turn an N-number, ICAO hex or ADS-B Exchange URL into a
+    mapped, summarized flight trace in one command."""
     pass
 
+
+def _resolve_targets(icao, n_number, url):
+    """Turn --icao/--n-number/--url into a list of (icao, note) and an optional date hint."""
+    targets = []
+    date_hint = None
+
+    for value in icao:
+        targets.append((value.strip().lower(), None))
+
+    for value in n_number:
+        info = resolve_n_number(value)
+        note = f"{info['n_number']}"
+        if info.get("owner_name"):
+            note += f" / {info['owner_name']}"
+        targets.append((info["icao"], note))
+        click.echo(f"Resolved {value} -> icao={info['icao']} ({info.get('maker', '')} {info.get('model', '')})")
+
+    if url:
+        info = parse_adsbx_url(url)
+        targets.append((info["icao"], "from URL"))
+        if info.get("date"):
+            date_hint = info["date"]
+            click.echo(f"Parsed URL -> icao={info['icao']}, date={info['date']}")
+        else:
+            click.echo(f"Parsed URL -> icao={info['icao']} (no replay date, treating as recent)")
+
+    if not targets:
+        raise click.UsageError("Provide at least one of --icao, --n-number or --url.")
+
+    return targets, date_hint
+
+
 @click.command()
-@click.option('--icao', required=True, help='ICAO code of the aircraft')
-@click.option('--start', required=True, type=click.DateTime(formats=["%Y-%m-%d"]), help='Start date (YYYY-MM-DD)')
-@click.option('--end', required=True, type=click.DateTime(formats=["%Y-%m-%d"]), help='End date (YYYY-MM-DD)')
-@click.option('--output', default='data/', help='Directory to save raw data')
-def fetch(icao, start, end, output):
-    """Fetch raw flight trace data from ADS-B Exchange."""
-    tracer = FlightTracer(aircraft_ids=[icao])
-    raw_df = tracer.get_traces(start.date(), end.date())
-    
+@click.option("--icao", multiple=True, help="ICAO hex code of the aircraft. Repeatable.")
+@click.option("--n-number", multiple=True, help="FAA tail number (e.g. N358TV). Resolved via hangarbay. Repeatable.")
+@click.option("--url", default=None, help="A globe.adsbexchange.com URL to parse for the ICAO hex and replay date.")
+@click.option("--start", type=click.DateTime(formats=["%Y-%m-%d"]), help="Start date (YYYY-MM-DD).")
+@click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD).")
+@click.option("--date", type=click.DateTime(formats=["%Y-%m-%d"]), help="Shorthand for --start/--end on the same day.")
+@click.option("--recent", is_flag=True, help="Force the recent-trace endpoint even if a date was found or given.")
+@click.option("--timezone", default=DEFAULT_TIMEZONE, show_default=True, help="IANA zone for local times in the output.")
+@click.option("--output", default="data", show_default=True, help="Directory to write the run's output folder into.")
+@click.option("--filter-ground/--keep-ground", default=True, help="Drop points where altitude == 'ground'.")
+@click.option("--background", default="esri-light", show_default=True,
+              help="Basemap: osm, esri-light, esri-street, esri-topo, esri-satellite, esri-natgeo.")
+@click.option("--formats", default="csv,geojson", show_default=True, help="Comma list of output formats: csv,geojson,shp.")
+@click.option("--no-plots", is_flag=True, help="Skip map and chart rendering; write data only.")
+@click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
+@click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
+def trace(icao, n_number, url, start, end, date, recent, timezone, output,
+          filter_ground, background, formats, no_plots, bucket, aws_profile):
+    """Fetch, process, map and summarize a flight trace in one step.
+
+    Pick the entry point that matches what you have:
+
+        flight-tracer trace --n-number N358TV
+        flight-tracer trace --icao a40442
+        flight-tracer trace --url "https://globe.adsbexchange.com/?replay=...&icao=a40442"
+
+    With no date given, defaults to ADS-B Exchange's recent-trace endpoint
+    (roughly the last few hours to a few days) -- the breaking-news case.
+    Pass --start/--end (or --date) for a flight that happened further back.
+    """
+    targets, date_hint = _resolve_targets(icao, n_number, url)
+    icaos = [t[0] for t in targets]
+
+    if date:
+        start_date, end_date = date.date(), date.date()
+    elif start or end:
+        start_date = (start or end).date()
+        end_date = (end or start).date()
+    elif date_hint and not recent:
+        start_date, end_date = date_hint, date_hint
+    else:
+        start_date, end_date = None, None
+
+    use_recent = recent or start_date is None
+
+    tracer = FlightTracer(aircraft_ids=icaos)
+    raw_df = tracer.get_traces(start_date, end_date, recent=use_recent)
+
     if raw_df.empty:
-        click.echo("No flight data found.")
-        return
-    
-    os.makedirs(output, exist_ok=True)
-    filename = os.path.join(output, f"raw_{icao}_{start.date()}_{end.date()}.csv")
-    raw_df.to_csv(filename, index=False)
-    click.echo(f"Saved raw data to {filename}")
-
-@click.command()
-@click.option('--input', required=True, type=click.Path(exists=True), help='Path to raw flight data CSV')
-@click.option('--filter-ground', is_flag=True, help='Exclude ground data from processing')
-@click.option('--timezone', default=None, help='Optional timezone for point_time conversion')
-def process(input, filter_ground, timezone):
-    """Process raw flight data into structured GeoDataFrame."""
-    raw_df = pd.read_csv(input)
-    if raw_df.empty or "icao" not in raw_df.columns:
-        click.echo("Error: Invalid flight data. Ensure the CSV contains valid flight traces.")
-        return
-    
-    gdf = FlightTracer.process_flight_data(None, raw_df, filter_ground=filter_ground, timezone=timezone)
-
-    processed_filename = input.replace("raw_", "processed_").replace(".csv", ".geojson")
-    gdf.to_file(processed_filename, driver="GeoJSON")
-    click.echo(f"Processed data saved as {processed_filename}")
-
-@click.command()
-@click.option('--input', required=True, type=click.Path(exists=True), help='Path to processed flight data')
-@click.option('--format', type=click.Choice(['csv', 'geojson', 'shp']), default='geojson', help='Output format')
-def export(input, format):
-    """Export processed data in different formats."""
-    gdf = gpd.read_file(input)
-    base_path = input.replace("processed_", "exported_").rsplit('.', 1)[0]
-    
-    if format == 'csv':
-        output_file = f"{base_path}.csv"
-        gdf.drop(columns='geometry', errors='ignore').to_csv(output_file, index=False)
-    elif format == 'geojson':
-        output_file = f"{base_path}.geojson"
-        gdf.to_file(output_file, driver="GeoJSON")
-    elif format == 'shp':
-        output_file = f"{base_path}.shp"
-        gdf.to_file(output_file, driver="ESRI Shapefile")
-    
-    click.echo(f"Exported data as {output_file}")
-
-@click.command()
-@click.option('--input', required=True, type=click.Path(exists=True), help='Path to processed flight data')
-@click.option('--bucket', required=True, help='AWS S3 bucket name')
-@click.option('--aws-profile', default=None, help='AWS profile name for authentication')
-def upload(input, bucket, aws_profile):
-    """Upload processed data to AWS S3 with an optional AWS profile."""
-    gdf = gpd.read_file(input)  # Load processed GeoDataFrame
-    file_name = os.path.basename(input)
-
-    from flight_tracer.core import FlightTracer  # Import inside function
-
-    # Instead of requiring aircraft_ids, initialize for S3 only
-    tracer = FlightTracer(aircraft_ids=["dummy"], aws_profile=aws_profile)  # Pass a dummy value
-
-    if tracer.s3_client is None:
-        click.echo("Error: AWS S3 client not initialized. Check your credentials or profile.")
+        click.echo("No trace data found. If this is an older flight, try --start/--end for the date it happened.")
         return
 
-    tracer.upload_to_s3(gdf, bucket, f"flight_tracer/{file_name}", f"flight_tracer/{file_name}.geojson")
+    gdf = tracer.process_flight_data(raw_df, filter_ground=filter_ground, timezone=timezone)
+    if gdf.empty:
+        click.echo("No airborne points after filtering. Try --keep-ground if this aircraft never left the ground.")
+        return
 
-    click.echo(f"Uploaded {file_name} to S3 bucket {bucket} (AWS profile: {aws_profile if aws_profile else 'default'})")
+    icao_str = "_".join(sorted(set(icaos)))
+    if use_recent:
+        slug = f"{icao_str}_recent_{datetime.now().strftime('%Y%m%d')}"
+    else:
+        slug = f"{icao_str}_{start_date}_{end_date}"
+    output_dir = os.path.join(output, slug)
+
+    written, gdf_lines = tracer.write_outputs(gdf, output_dir, formats=tuple(formats.split(",")))
+
+    summary = tracer.summarize(gdf, timezone=timezone)
+    summary_path = os.path.join(output_dir, "summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2, default=str)
+    written["summary"] = summary_path
+
+    click.echo("")
+    click.echo(tracer.headline_for(summary))
+    click.echo("")
+
+    if not no_plots:
+        label = summary.get("registration") or summary.get("icao", "").upper()
+        aircraft = summary.get("description") or summary.get("aircraft_type") or ""
+        headline = f"{label} \u2014 {aircraft}" if aircraft else label
+        dek = f"Tracked {summary.get('first_contact_local')} to {summary.get('last_contact_local')} ({timezone})"
+        source = "Source: ADS-B Exchange."
+        if summary.get("has_multilaterated_positions"):
+            source += " Some positions are multilaterated estimates."
+
+        map_path = os.path.join(output_dir, "map.png")
+        plot_map(gdf, gdf_lines, headline, dek, source, map_path, background=background)
+        written["map"] = map_path
+
+        alt_path = os.path.join(output_dir, "altitude.png")
+        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=source)
+        written["altitude_chart"] = alt_path
+
+        speed_path = os.path.join(output_dir, "speed.png")
+        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=source)
+        written["speed_chart"] = speed_path
+
+    click.echo(f"\nWrote {len(written)} files to {output_dir}/")
+
+    if bucket:
+        tracer_up = FlightTracer(aircraft_ids=icaos, aws_profile=aws_profile)
+        tracer_up.upload_directory_to_s3(output_dir, bucket, prefix=f"flight_tracer/{slug}")
+
 
 @click.command()
-@click.option('--input', required=True, type=click.Path(exists=True), help='Path to processed flight data')
-@click.option('--output', required=True, type=click.Path(), help='Output image file for the plot')
-def plot(input, output):
-    """Plot flight paths with a basemap."""
-    gdf = gpd.read_file(input)  # Load processed data
+@click.option("--n-number", required=True, help="FAA tail number, e.g. N358TV or 358TV.")
+def resolve(n_number):
+    """Look up an N-number's ICAO hex via the FAA registry, without fetching a trace."""
+    try:
+        info = resolve_n_number(n_number)
+    except (ImportError, ValueError) as exc:
+        raise click.ClickException(str(exc))
 
-    from flight_tracer.core import FlightTracer  # Import inside function
-    FlightTracer.plot_flights(None, gdf, geometry_type='points', fig_filename=output)
+    click.echo(f"ICAO hex:  {info['icao']}")
+    click.echo(f"N-number:  {info['n_number']}")
+    click.echo(f"Aircraft:  {info.get('maker', '')} {info.get('model', '')}".strip())
+    click.echo(f"Owner:     {info.get('owner_name', '')}")
 
-    click.echo(f"Saved flight map as {output}")
 
-# Register commands
-cli.add_command(fetch)
-cli.add_command(process)
-cli.add_command(export)
-cli.add_command(upload)
-cli.add_command(plot)
+cli.add_command(trace)
+cli.add_command(resolve)
 
 if __name__ == "__main__":
     cli()

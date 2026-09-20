@@ -1,2 +1,5 @@
 from .core import FlightTracer
-__version__ = "0.1.7"
+from .identify import parse_adsbx_url, resolve_n_number
+
+__version__ = "0.2.0"
+__all__ = ["FlightTracer", "parse_adsbx_url", "resolve_n_number"]

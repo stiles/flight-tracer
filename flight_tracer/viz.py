@@ -1,0 +1,197 @@
+# flight_tracer/viz.py
+"""Publication-ready map and chart rendering for flight traces.
+
+Basemap and typography follow the CNN Visuals house style. Carto withdrew
+anonymous tile access some time ago, so its providers are mapped onto Esri
+equivalents rather than left to fail silently.
+"""
+
+import contextily as ctx
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+
+COLOR_TEXT = "#262626"
+COLOR_MUTED = "#8e8e8e"
+COLOR_AXIS = "#A6A6A6"
+COLOR_GRID = "#ececec"
+COLOR_BACKGROUND = "#FEFEFE"
+COLOR_ROUTE = "#F18851"
+COLOR_START = "#53A796"
+COLOR_END = "#C52622"
+
+CATEGORY_COLORS = ["#5194C3", "#F8C153", "#C52622", "#53A796", "#F18851", "#7C4EA5"]
+
+FONT_STACK = ["CNN Sans Display", "Helvetica Neue", "Arial", "DejaVu Sans"]
+
+BASEMAPS = {
+    "osm": ("OpenStreetMap.Mapnik", "OpenStreetMap contributors"),
+    "esri-light": ("Esri.WorldGrayCanvas", "Esri"),
+    "esri-street": ("Esri.WorldStreetMap", "Esri"),
+    "esri-topo": ("Esri.WorldTopoMap", "Esri"),
+    "esri-satellite": ("Esri.WorldImagery", "Esri"),
+    "esri-natgeo": ("Esri.NatGeoWorldMap", "Esri"),
+}
+
+# Carto withdrew anonymous basemap access; its tiles now return watermarked
+# "API key required" placeholders instead of a real basemap. Route the old
+# names to an Esri equivalent so a call written years ago still draws a map.
+RETIRED_BASEMAPS = {
+    "carto": "esri-light",
+    "carto-light": "esri-light",
+    "cartodb": "esri-light",
+    "cartodb.positron": "esri-light",
+    "positron": "esri-light",
+}
+
+DEFAULT_BASEMAP = "esri-light"
+
+
+def configure_style():
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": FONT_STACK,
+        "text.color": COLOR_TEXT,
+        "figure.facecolor": COLOR_BACKGROUND,
+        "axes.facecolor": COLOR_BACKGROUND,
+        "savefig.facecolor": COLOR_BACKGROUND,
+        "xtick.color": COLOR_AXIS,
+        "ytick.color": COLOR_AXIS,
+        "grid.color": COLOR_GRID,
+        "grid.linewidth": 1,
+        "axes.edgecolor": COLOR_GRID,
+        "axes.linewidth": 0.5,
+    })
+
+
+configure_style()
+
+
+def resolve_basemap(background):
+    """Return (provider, credit) for a basemap key, falling back to the default."""
+    key = (background or DEFAULT_BASEMAP).lower()
+    key = RETIRED_BASEMAPS.get(key, key)
+
+    if key not in BASEMAPS:
+        print(f"Unknown basemap '{background}'; using '{DEFAULT_BASEMAP}'.")
+        key = DEFAULT_BASEMAP
+
+    path, credit = BASEMAPS[key]
+    provider = ctx.providers
+    for part in path.split("."):
+        provider = getattr(provider, part)
+    return provider, credit
+
+
+def _add_basemap(ax, background, zoom=None):
+    """Draw the basemap, retrying with the default provider if the first fails."""
+    provider, credit = resolve_basemap(background)
+    try:
+        kwargs = {"source": provider, "reset_extent": False}
+        if zoom is not None:
+            kwargs["zoom"] = zoom
+        ctx.add_basemap(ax, **kwargs)
+        return credit
+    except Exception as exc:
+        print(f"Could not load the {credit} basemap ({exc}); falling back to '{DEFAULT_BASEMAP}'.")
+        fallback_provider, fallback_credit = resolve_basemap(DEFAULT_BASEMAP)
+        try:
+            ctx.add_basemap(ax, source=fallback_provider, reset_extent=False)
+            return fallback_credit
+        except Exception as exc2:
+            print(f"Fallback basemap failed too ({exc2}); drawing the route with no basemap.")
+            return None
+
+
+def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
+             background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None):
+    """Plot a flight trace: route, start/end markers, basemap and CNN-style chrome."""
+    if gdf_points.crs is None:
+        gdf_points = gdf_points.set_crs(epsg=4326)
+    points_3857 = gdf_points.to_crs(epsg=3857)
+    lines_3857 = gdf_lines.to_crs(epsg=3857) if gdf_lines is not None and not gdf_lines.empty else None
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    legs = points_3857["flight_leg"].unique() if "flight_leg" in points_3857.columns else [None]
+    multi_leg = len(legs) > 1
+    colors = {leg: CATEGORY_COLORS[i % len(CATEGORY_COLORS)] for i, leg in enumerate(legs)}
+
+    if lines_3857 is not None:
+        for _, row in lines_3857.iterrows():
+            color = colors.get(row.get("flight_leg"), COLOR_ROUTE) if multi_leg else COLOR_ROUTE
+            gpd_series = lines_3857[lines_3857["flight_leg"] == row["flight_leg"]] if multi_leg else lines_3857
+            gpd_series.plot(ax=ax, linewidth=2.2, color=color, zorder=3)
+    else:
+        points_3857.plot(ax=ax, marker="o", markersize=6, color=COLOR_ROUTE, zorder=3)
+
+    # Start and end markers make "where did contact begin/end" legible at a glance.
+    start = points_3857.iloc[0]
+    end = points_3857.iloc[-1]
+    ax.scatter([start.geometry.x], [start.geometry.y], s=70, color=COLOR_START,
+               edgecolor="white", linewidth=1.2, zorder=5, label="First contact")
+    ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_END,
+               edgecolor="white", linewidth=1.2, zorder=5, marker="s", label="Last contact")
+
+    xmin, ymin, xmax, ymax = points_3857.total_bounds
+    x_pad = max((xmax - xmin) * pad_factor, 500)
+    y_pad = max((ymax - ymin) * pad_factor, 500)
+    ax.set_xlim(xmin - x_pad, xmax + x_pad)
+    ax.set_ylim(ymin - y_pad, ymax + y_pad)
+
+    credit = _add_basemap(ax, background, zoom=zoom)
+
+    ax.set_axis_off()
+    ax.legend(loc="lower right", fontsize=9, frameon=True, facecolor="white", framealpha=0.85)
+
+    fig.text(0.02, 0.98, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
+    if dek:
+        fig.text(0.02, 0.935, dek, fontsize=11, color=COLOR_TEXT, va="top", wrap=True)
+
+    source_line = source or ""
+    if credit:
+        source_line = f"{source_line} Basemap: {credit}." if source_line else f"Basemap: {credit}."
+    fig.text(0.02, 0.01, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.92])
+    _save(fig, output_path)
+
+
+def plot_series(df, value_col, title, ylabel, output_path, source="",
+                 time_col="point_time_local", color="#5194C3", figsize=(9, 3.6)):
+    """A single-series time chart (altitude, speed) in the house style."""
+    series = df[[time_col, value_col]].dropna().sort_values(time_col)
+    if series.empty:
+        print(f"No data to plot for {value_col}; skipping {output_path}.")
+        return
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(series[time_col], series[value_col], color=color, linewidth=1.6)
+
+    last = series.iloc[-1]
+    ax.scatter([last[time_col]], [last[value_col]], s=28, color=color, zorder=5,
+               edgecolor="white", linewidth=1)
+    ax.annotate(f"{last[value_col]:,.0f}", (last[time_col], last[value_col]),
+                textcoords="offset points", xytext=(6, 4), fontsize=11,
+                fontweight="bold", color=COLOR_TEXT)
+
+    ax.set_title(title, fontsize=13, color=COLOR_TEXT, loc="left", pad=10)
+    ax.set_ylabel(ylabel, fontsize=10, color=COLOR_AXIS)
+    ax.grid(axis="y", color=COLOR_GRID, linewidth=1)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color(COLOR_GRID)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax.tick_params(axis="both", length=0, labelsize=9, colors=COLOR_AXIS)
+
+    if source:
+        fig.text(0.01, 0.01, source, fontsize=8.5, color=COLOR_MUTED, va="bottom")
+
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
+    _save(fig, output_path)
+
+
+def _save(fig, output_path):
+    import os
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {output_path}")
