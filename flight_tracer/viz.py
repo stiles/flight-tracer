@@ -15,9 +15,18 @@ COLOR_MUTED = "#8e8e8e"
 COLOR_AXIS = "#A6A6A6"
 COLOR_GRID = "#ececec"
 COLOR_BACKGROUND = "#FEFEFE"
-COLOR_ROUTE = "#F18851"
-COLOR_START = "#53A796"
-COLOR_END = "#C52622"
+
+# One color for the flight itself, wherever it shows up: the map route, and
+# the altitude/speed chart lines. One flight, one color.
+COLOR_FLIGHT = "#5194C3"
+
+# First/last contact deliberately avoid red+green (reads as a holiday pair,
+# and it's the one combination red-green colorblind readers can't tell
+# apart). First contact is muted -- it's context. Last contact is the point
+# that usually matters most in a breaking-news read, so it gets the bolder
+# color; shape (circle vs. square) carries the rest of the distinction.
+COLOR_FIRST_CONTACT = "#262626"
+COLOR_LAST_CONTACT = "#F18851"
 
 CATEGORY_COLORS = ["#5194C3", "#F8C153", "#C52622", "#53A796", "#F18851", "#7C4EA5"]
 
@@ -142,18 +151,20 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
 
     if lines_3857 is not None:
         for _, row in lines_3857.iterrows():
-            color = colors.get(row.get("flight_leg"), COLOR_ROUTE) if multi_leg else COLOR_ROUTE
+            color = colors.get(row.get("flight_leg"), COLOR_FLIGHT) if multi_leg else COLOR_FLIGHT
             gpd_series = lines_3857[lines_3857["flight_leg"] == row["flight_leg"]] if multi_leg else lines_3857
             gpd_series.plot(ax=ax, linewidth=2.2, color=color, zorder=3)
     else:
-        points_3857.plot(ax=ax, marker="o", markersize=6, color=COLOR_ROUTE, zorder=3)
+        points_3857.plot(ax=ax, marker="o", markersize=6, color=COLOR_FLIGHT, zorder=3)
 
-    # Start and end markers make "where did contact begin/end" legible at a glance.
+    # First/last contact markers -- not "start/end": what's plotted is where
+    # ADS-B picked up and lost the signal, which in a crash can sit well
+    # short of where the aircraft actually came down.
     start = points_3857.iloc[0]
     end = points_3857.iloc[-1]
-    ax.scatter([start.geometry.x], [start.geometry.y], s=70, color=COLOR_START,
+    ax.scatter([start.geometry.x], [start.geometry.y], s=60, color=COLOR_FIRST_CONTACT,
                edgecolor="white", linewidth=1.2, zorder=5, label="First contact")
-    ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_END,
+    ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_LAST_CONTACT,
                edgecolor="white", linewidth=1.2, zorder=5, marker="s", label="Last contact")
 
     xmin, ymin, xmax, ymax = points_3857.total_bounds
@@ -214,7 +225,7 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
 
 
 def plot_series(df, value_col, title, ylabel, output_path, source="",
-                 time_col=None, color="#5194C3", figsize=(9, 3.6)):
+                 time_col=None, color=COLOR_FLIGHT, figsize=(9, 3.6)):
     """A single-series time chart (altitude, speed) in the house style.
 
     Plots in `point_time_local` when the DataFrame has it (i.e. a timezone
