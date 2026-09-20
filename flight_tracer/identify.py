@@ -119,7 +119,7 @@ def resolve_timezone(timezone, lat=None, lon=None):
         if lat is None or lon is None:
             raise ValueError("'auto' requires a lat/lon to infer a timezone from.")
         try:
-            from timezonefinder import TimezoneFinder
+            TimezoneFinder = _import_timezone_finder()
         except ImportError as exc:
             raise ImportError(
                 "--timezone auto requires the 'timezonefinder' package.\n"
@@ -135,3 +135,28 @@ def resolve_timezone(timezone, lat=None, lon=None):
         return zone
 
     return timezone
+
+
+def _import_timezone_finder():
+    """Import TimezoneFinder without numba dumping a traceback on a stale scipy.
+
+    timezonefinder pulls in numba for its JIT-compiled point-in-polygon
+    check. numba doesn't depend on scipy at all, but if *some* scipy happens
+    to be installed (as it often is, transitively, in a shared environment)
+    numba opportunistically tries to use it for BLAS acceleration -- and an
+    older scipy built against NumPy 1.x's ABI crashes under NumPy 2.x with a
+    raw `AttributeError: _ARRAY_API not found` traceback. It's caught
+    internally and execution continues correctly either way, but it prints
+    like a real failure. Disabling numba's JIT (only if the caller hasn't
+    already set an opinion) skips that code path entirely; timezonefinder's
+    lookup works the same, just interpreted rather than compiled -- plenty
+    fast for one point-in-polygon check per run.
+    """
+    import os
+    import warnings
+
+    os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="numba")
+        from timezonefinder import TimezoneFinder
+    return TimezoneFinder
