@@ -10,6 +10,9 @@ fetch_recent_flight.py
 # flight-tracer trace's default --output directory
 data/
 
+# macOS
+.DS_Store
+
 # C extensions
 *.so
 

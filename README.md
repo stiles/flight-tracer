@@ -218,6 +218,12 @@ Or from the CLI: `flight-tracer trace --icao a40442 --bucket my-bucket --aws-pro
 
 ---
 
+## Releasing
+
+See [PUBLISH.md](PUBLISH.md) and [CHANGELOG.md](CHANGELOG.md). In short: `./publish.sh`.
+
+---
+
 ## Credits
 
 Thanks to [ADS-B Exchange](https://globe.adsbexchange.com/) for providing open flight data. Consider [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/).
