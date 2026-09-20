@@ -4,6 +4,7 @@ from datetime import date
 import pandas as pd
 
 from flight_tracer import FlightTracer, parse_adsbx_url
+from flight_tracer.identify import resolve_timezone
 
 
 class TestGenerateUrls(unittest.TestCase):
@@ -102,7 +103,21 @@ class TestProcessFlightData(unittest.TestCase):
         self.assertEqual(len(gdf), 1)
         self.assertEqual(gdf.iloc[0]["altitude"], 1500)
 
-    def test_local_and_utc_times_both_present(self):
+    def test_defaults_to_utc_only_no_local_column(self):
+        rows = [self._raw_row(0, flags=0)]
+        df = self._raw_df(rows)
+        tracer = FlightTracer(aircraft_ids=["a40442"])
+        gdf = tracer.process_flight_data(df, filter_ground=False)
+        self.assertIn("point_time_utc", gdf.columns)
+        self.assertNotIn("point_time_local", gdf.columns)
+
+        summary = tracer.summarize(gdf)
+        self.assertIn("first_contact_utc", summary)
+        self.assertNotIn("first_contact_local", summary)
+        self.assertIn("UTC", tracer.headline_for(summary))
+        self.assertNotIn("None", tracer.headline_for(summary))
+
+    def test_timezone_adds_local_alongside_utc_never_instead_of(self):
         rows = [self._raw_row(0, flags=0)]
         df = self._raw_df(rows)
         tracer = FlightTracer(aircraft_ids=["a40442"])
@@ -110,6 +125,31 @@ class TestProcessFlightData(unittest.TestCase):
         self.assertIn("point_time_utc", gdf.columns)
         self.assertIn("point_time_local", gdf.columns)
         self.assertEqual(str(gdf["point_time_local"].dt.tz), "America/Los_Angeles")
+
+        summary = tracer.summarize(gdf, timezone="America/Los_Angeles")
+        self.assertIn("first_contact_utc", summary)
+        self.assertIn("first_contact_local", summary)
+        headline = tracer.headline_for(summary)
+        self.assertIn("UTC:", headline)  # local is never shown without UTC alongside it
+
+
+class TestResolveTimezone(unittest.TestCase):
+    def test_none_and_utc_mean_utc_only(self):
+        self.assertIsNone(resolve_timezone(None))
+        self.assertIsNone(resolve_timezone(""))
+        self.assertIsNone(resolve_timezone("UTC"))
+
+    def test_named_zone_passes_through(self):
+        self.assertEqual(resolve_timezone("America/New_York"), "America/New_York")
+
+    def test_auto_infers_from_lat_lon(self):
+        # The a40442 helicopter's first contact point, in the San Fernando Valley.
+        zone = resolve_timezone("auto", lat=34.257339, lon=-118.410420)
+        self.assertEqual(zone, "America/Los_Angeles")
+
+    def test_auto_without_coordinates_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_timezone("auto")
 
 
 if __name__ == "__main__":

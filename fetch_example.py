@@ -23,9 +23,11 @@ if raw_df.empty:
     print("No trace data was fetched. Try passing --start/--end for a known date.")
 else:
     print("\nProcessing into a GeoDataFrame (legs come from ADS-B Exchange's own flag, not a guess)...")
-    gdf = tracer.process_flight_data(raw_df, timezone="America/Los_Angeles")
+    # Times stay UTC unless you ask for local -- pass timezone="America/Los_Angeles"
+    # (or any IANA zone) to add a point_time_local column alongside point_time_utc.
+    gdf = tracer.process_flight_data(raw_df)
 
-    summary = tracer.summarize(gdf, timezone="America/Los_Angeles")
+    summary = tracer.summarize(gdf)
     print("\n" + tracer.headline_for(summary))
 
     output_dir = f"data/{ICAO}_example"
@@ -35,8 +37,8 @@ else:
     plot_map(
         gdf, gdf_lines,
         headline=f"{summary['registration']} \u2014 {summary['description']}",
-        dek=f"Tracked {summary['first_contact_local']} to {summary['last_contact_local']}",
-        source="Source: ADS-B Exchange.",
+        dek=f"Tracked {summary['first_contact_utc']} to {summary['last_contact_utc']}",
+        source="Source: ADS-B Exchange",
         output_path=f"{output_dir}/map.png",
     )
     plot_series(gdf, "altitude", "Altitude", "Feet", f"{output_dir}/altitude.png")

@@ -42,6 +42,6 @@ else:
         gdf, gdf_lines,
         headline="LAPD air fleet",
         dek="Recent flight activity",
-        source="Source: ADS-B Exchange.",
+        source="Source: ADS-B Exchange",
         output_path=f"{output_dir}/map.png",
     )

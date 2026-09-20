@@ -85,10 +85,29 @@ Every run also prints the headline straight to the terminal:
 
 ```
 N358TV (AEROSPATIALE AS-350 Ecureuil, hex a40442)
-Tracked 2026-09-15 17:23:28 PDT → 2026-09-15 18:55:25 PDT (91.9 min, 1 leg)
+Tracked 2026-09-16 00:23:28 UTC → 2026-09-16 01:55:25 UTC (91.9 min, 1 leg)
 ```
 
-Both a UTC and a local timestamp are always in `summary.json` and the CSV — "what time did this happen" doesn't require a manual `pytz` conversion. Local zone defaults to `America/Los_Angeles`; pass `--timezone "America/New_York"` (any IANA zone) for anywhere else.
+### Times are UTC unless you ask for local
+
+ADS-B Exchange, ATC and pilots are all UTC-native, and a global newsroom has no reason to default to any one city's clock. So by default, everything — the terminal headline, `summary.json`, the CSV, the charts — stays in UTC, and there's no `point_time_local` column at all. One zone, nothing to get out of sync.
+
+Ask for local time with `--timezone`, and it's added *alongside* UTC, never in place of it — every artifact that shows a local time restates the same span in UTC right next to it:
+
+```bash
+flight-tracer trace --icao a40442 --date 2026-09-16 --timezone America/New_York
+# Tracked 2026-09-15 20:23:28 EDT → 2026-09-15 21:55:25 EDT (91.9 min, 1 leg)
+# UTC: 2026-09-16 00:23:28 UTC → 2026-09-16 01:55:25 UTC
+```
+
+Don't know the local zone for wherever this happened? `--timezone auto` infers it from the trace's first position (via [timezonefinder](https://pypi.org/project/timezonefinder/), offline, no API):
+
+```bash
+flight-tracer trace --icao a40442 --date 2026-09-16 --timezone auto
+# Inferred timezone from location: America/Los_Angeles
+```
+
+Requires the `tz` extra: `pip install flight-tracer[tz]`.
 
 ### Flight legs, decoded rather than guessed
 
@@ -114,7 +133,8 @@ flight-tracer trace
   --start / --end DATE     Historical date range (YYYY-MM-DD).
   --date DATE              Shorthand for --start/--end on the same day.
   --recent                 Force the recent-trace endpoint even if a date was found or given.
-  --timezone ZONE          IANA zone for local times. Default: America/Los_Angeles.
+  --timezone ZONE          Add local times alongside UTC: an IANA zone (e.g. America/Chicago) or
+                           'auto' to infer one from the trace's first position. Default: UTC only.
   --output DIR             Parent directory for the run's output folder. Default: data.
   --filter-ground          Drop ground points (default). --keep-ground to disable.
   --background NAME        Basemap. Default: esri-light.
@@ -141,7 +161,7 @@ summary = tracer.summarize(gdf)
 print(tracer.headline_for(summary))
 
 written, gdf_lines = tracer.write_outputs(gdf, "data/a40442")
-plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "Source: ADS-B Exchange.",
+plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "Source: ADS-B Exchange",
           "data/a40442/map.png")
 plot_series(gdf, "altitude", "Altitude", "Feet", "data/a40442/altitude.png")
 ```

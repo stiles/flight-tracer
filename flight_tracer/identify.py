@@ -96,3 +96,42 @@ def resolve_n_number(n_number):
 def looks_like_icao(value):
     """True if value looks like a 6-character ICAO hex rather than an N-number."""
     return bool(ICAO_RE.match(value.strip()))
+
+
+def resolve_timezone(timezone, lat=None, lon=None):
+    """Turn a --timezone value into an IANA zone name, or None for UTC-only.
+
+    Times are UTC by default -- that's the zone ADS-B Exchange, ATC and
+    pilots already use, and the one zone that can't be silently wrong for a
+    reporter who isn't in any particular city. Local time is opt-in:
+
+    - None / "" / "utc"  -> None (stay in UTC, no local column added)
+    - a named IANA zone   -> that zone, e.g. "America/Los_Angeles"
+    - "auto"              -> inferred from a lat/lon (e.g. the trace's first
+                              point), via timezonefinder, for when you want
+                              local time but don't know or want to type the
+                              zone for wherever this happened
+    """
+    if not timezone or timezone.lower() == "utc":
+        return None
+
+    if timezone.lower() == "auto":
+        if lat is None or lon is None:
+            raise ValueError("'auto' requires a lat/lon to infer a timezone from.")
+        try:
+            from timezonefinder import TimezoneFinder
+        except ImportError as exc:
+            raise ImportError(
+                "--timezone auto requires the 'timezonefinder' package.\n"
+                "Install it with:\n"
+                "    pip install timezonefinder\n"
+                "or install flight-tracer with the tz extra:\n"
+                "    pip install flight-tracer[tz]"
+            ) from exc
+
+        zone = TimezoneFinder().timezone_at(lat=float(lat), lng=float(lon))
+        if not zone:
+            raise ValueError(f"Could not determine a timezone for ({lat}, {lon}).")
+        return zone
+
+    return timezone

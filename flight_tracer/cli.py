@@ -4,8 +4,8 @@ from datetime import datetime
 
 import click
 
-from flight_tracer.core import DEFAULT_TIMEZONE, FlightTracer
-from flight_tracer.identify import parse_adsbx_url, resolve_n_number
+from flight_tracer.core import FlightTracer
+from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
 from flight_tracer.viz import plot_map, plot_series
 
 
@@ -55,7 +55,9 @@ def _resolve_targets(icao, n_number, url):
 @click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD).")
 @click.option("--date", type=click.DateTime(formats=["%Y-%m-%d"]), help="Shorthand for --start/--end on the same day.")
 @click.option("--recent", is_flag=True, help="Force the recent-trace endpoint even if a date was found or given.")
-@click.option("--timezone", default=DEFAULT_TIMEZONE, show_default=True, help="IANA zone for local times in the output.")
+@click.option("--timezone", default=None,
+              help="IANA zone to add alongside UTC (e.g. America/Los_Angeles), or 'auto' to infer it "
+                   "from the trace's first position. Default: UTC only.")
 @click.option("--output", default="data", show_default=True, help="Directory to write the run's output folder into.")
 @click.option("--filter-ground/--keep-ground", default=True, help="Drop points where altitude == 'ground'.")
 @click.option("--background", default="esri-light", show_default=True,
@@ -100,7 +102,14 @@ def trace(icao, n_number, url, start, end, date, recent, timezone, output,
         click.echo("No trace data found. If this is an older flight, try --start/--end for the date it happened.")
         return
 
-    gdf = tracer.process_flight_data(raw_df, filter_ground=filter_ground, timezone=timezone)
+    if timezone and timezone.lower() == "auto":
+        first_point = raw_df.dropna(subset=["lat", "lon"]).iloc[0]
+        resolved_timezone = resolve_timezone("auto", lat=first_point["lat"], lon=first_point["lon"])
+        click.echo(f"Inferred timezone from location: {resolved_timezone}")
+    else:
+        resolved_timezone = resolve_timezone(timezone)
+
+    gdf = tracer.process_flight_data(raw_df, filter_ground=filter_ground, timezone=resolved_timezone)
     if gdf.empty:
         click.echo("No airborne points after filtering. Try --keep-ground if this aircraft never left the ground.")
         return
@@ -114,7 +123,7 @@ def trace(icao, n_number, url, start, end, date, recent, timezone, output,
 
     written, gdf_lines = tracer.write_outputs(gdf, output_dir, formats=tuple(formats.split(",")))
 
-    summary = tracer.summarize(gdf, timezone=timezone)
+    summary = tracer.summarize(gdf, timezone=resolved_timezone)
     summary_path = os.path.join(output_dir, "summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
@@ -128,10 +137,14 @@ def trace(icao, n_number, url, start, end, date, recent, timezone, output,
         label = summary.get("registration") or summary.get("icao", "").upper()
         aircraft = summary.get("description") or summary.get("aircraft_type") or ""
         headline = f"{label} \u2014 {aircraft}" if aircraft else label
-        dek = f"Tracked {summary.get('first_contact_local')} to {summary.get('last_contact_local')} ({timezone})"
-        source = "Source: ADS-B Exchange."
+        if summary.get("first_contact_local"):
+            dek = (f"Tracked {summary['first_contact_local']} to {summary['last_contact_local']} "
+                   f"(UTC: {summary['first_contact_utc']} to {summary['last_contact_utc']})")
+        else:
+            dek = f"Tracked {summary.get('first_contact_utc')} to {summary.get('last_contact_utc')}"
+        source = "Source: ADS-B Exchange"
         if summary.get("has_multilaterated_positions"):
-            source += " Some positions are multilaterated estimates."
+            source += " \u2014 some positions are multilaterated estimates"
 
         map_path = os.path.join(output_dir, "map.png")
         plot_map(gdf, gdf_lines, headline, dek, source, map_path, background=background)

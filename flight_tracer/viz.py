@@ -23,6 +23,16 @@ CATEGORY_COLORS = ["#5194C3", "#F8C153", "#C52622", "#53A796", "#F18851", "#7C4E
 
 FONT_STACK = ["CNN Sans Display", "Helvetica Neue", "Arial", "DejaVu Sans"]
 
+# AP style abbreviates all months except March through July.
+AP_MONTHS = {
+    1: "Jan.", 2: "Feb.", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "Aug.", 9: "Sept.", 10: "Oct.", 11: "Nov.", 12: "Dec.",
+}
+
+
+def _ap_date(ts):
+    return f"{AP_MONTHS[ts.month]} {ts.day}, {ts.year}"
+
 BASEMAPS = {
     "osm": ("OpenStreetMap.Mapnik", "OpenStreetMap contributors"),
     "esri-light": ("Esri.WorldGrayCanvas", "Esri"),
@@ -178,15 +188,25 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
 
     source_line = source or ""
     if credit:
-        source_line = f"{source_line} Basemap: {credit}." if source_line else f"Basemap: {credit}."
+        source_line = f"{source_line} Basemap: {credit}" if source_line else f"Basemap: {credit}"
     fig.text(0.02, 0.02, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
 
     _save(fig, output_path, tight=False)
 
 
 def plot_series(df, value_col, title, ylabel, output_path, source="",
-                 time_col="point_time_local", color="#5194C3", figsize=(9, 3.6)):
-    """A single-series time chart (altitude, speed) in the house style."""
+                 time_col=None, color="#5194C3", figsize=(9, 3.6)):
+    """A single-series time chart (altitude, speed) in the house style.
+
+    Plots in `point_time_local` when the DataFrame has it (i.e. a timezone
+    was requested upstream), otherwise UTC -- never a silent default to any
+    one city's clock. Either way the subtitle names the zone actually on the
+    axis and, when that zone is local, restates the same start/end in UTC
+    right next to it, so the chart is never ambiguous on its own.
+    """
+    if time_col is None:
+        time_col = "point_time_local" if "point_time_local" in df.columns else "point_time_utc"
+
     series = df[[time_col, value_col]].dropna().sort_values(time_col)
     if series.empty:
         print(f"No data to plot for {value_col}; skipping {output_path}.")
@@ -202,18 +222,47 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
                 textcoords="offset points", xytext=(6, 4), fontsize=11,
                 fontweight="bold", color=COLOR_TEXT)
 
-    ax.set_title(title, fontsize=13, color=COLOR_TEXT, loc="left", pad=10)
+    # The x-axis is bare HH:MM, which says nothing about the date or zone on
+    # its own. Every chart gets a subtitle naming both, and the tick format
+    # grows a date if the trace spans more than one calendar day in that zone
+    # (e.g. crosses local midnight).
+    first_ts, last_ts = series[time_col].iloc[0], series[time_col].iloc[-1]
+    tz_abbrev = first_ts.strftime("%Z") if first_ts.tzinfo else "UTC"
+    spans_multiple_days = first_ts.date() != last_ts.date()
+    if spans_multiple_days:
+        date_label = f"{_ap_date(first_ts)} \u2013 {_ap_date(last_ts)}"
+        tick_format = "%b %-d, %H:%M"
+    else:
+        date_label = _ap_date(first_ts)
+        tick_format = "%H:%M"
+    subtitle = f"{date_label} \u00b7 {tz_abbrev}"
+
+    # If the axis is in a local zone, restate the same span in UTC so the
+    # chart is never ambiguous on its own -- the whole point of defaulting to
+    # UTC is defeated if a local-only chart escapes without it.
+    if time_col == "point_time_local" and "point_time_utc" in df.columns:
+        utc_start = df["point_time_utc"].iloc[0].strftime("%H:%M")
+        utc_end = df["point_time_utc"].iloc[-1].strftime("%H:%M")
+        subtitle += f" (UTC {utc_start}\u2013{utc_end})"
+
+    fig.text(0.01, 0.97, title, fontsize=13, fontweight="bold", color=COLOR_TEXT, va="top")
+    fig.text(0.01, 0.87, subtitle, fontsize=10, color=COLOR_MUTED, va="top")
+
     ax.set_ylabel(ylabel, fontsize=10, color=COLOR_AXIS)
     ax.grid(axis="y", color=COLOR_GRID, linewidth=1)
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.spines["bottom"].set_color(COLOR_GRID)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    # matplotlib's DateFormatter renders in UTC unless told otherwise -- a
+    # tz-aware pandas column isn't enough on its own. Without `tz=` here, the
+    # ticks would silently show UTC clock time even while the subtitle above
+    # claims a local zone.
+    ax.xaxis.set_major_formatter(mdates.DateFormatter(tick_format, tz=first_ts.tzinfo))
     ax.tick_params(axis="both", length=0, labelsize=9, colors=COLOR_AXIS)
 
     if source:
         fig.text(0.01, 0.01, source, fontsize=8.5, color=COLOR_MUTED, va="bottom")
 
-    plt.tight_layout(rect=[0, 0.05, 1, 1])
+    plt.tight_layout(rect=[0, 0.05, 1, 0.78])
     _save(fig, output_path)
 
 

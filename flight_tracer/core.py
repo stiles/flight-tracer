@@ -44,7 +44,11 @@ TRACE_COLUMNS = [
     "roll",
 ]
 
-DEFAULT_TIMEZONE = "America/Los_Angeles"
+# None means UTC-only: no point_time_local column, nothing to get out of
+# sync. Aviation data -- ADS-B, ATC, pilots -- is UTC-native, and a global
+# newsroom has no reason to default to any one city's clock. Local time is
+# opt-in via the timezone argument (see identify.resolve_timezone).
+DEFAULT_TIMEZONE = None
 
 
 class FlightTracer:
@@ -186,9 +190,11 @@ class FlightTracer:
         Parameters:
         - df: raw trace DataFrame, as returned by get_traces().
         - filter_ground: drop points where altitude == "ground".
-        - timezone: IANA zone for the `point_time_local` column. Every run
-          gets both the UTC and local time, so "what time did this happen"
-          never depends on remembering a manual conversion.
+        - timezone: IANA zone name, or None (default) to stay UTC-only. When
+          set, adds a `point_time_local` column alongside `point_time_utc`
+          -- UTC is never dropped, so a local time is always paired with the
+          zone-proof original rather than replacing it. Resolve "auto" via
+          identify.resolve_timezone() before calling this.
 
         Returns a GeoDataFrame of points.
         """
@@ -221,11 +227,12 @@ class FlightTracer:
 
         df["flight_leg"] = df["call_sign"] + "_leg" + df["leg_id"].astype(str)
 
-        try:
-            tz = pytz.timezone(timezone)
-        except Exception as exc:
-            raise ValueError(f"Invalid timezone '{timezone}': {exc}")
-        df["point_time_local"] = df["point_time_utc"].dt.tz_convert(tz)
+        if timezone:
+            try:
+                tz = pytz.timezone(timezone)
+            except Exception as exc:
+                raise ValueError(f"Invalid timezone '{timezone}': {exc}")
+            df["point_time_local"] = df["point_time_utc"].dt.tz_convert(tz)
 
         if filter_ground:
             df = df.loc[df["altitude"] != "ground"].copy()
@@ -329,9 +336,11 @@ class FlightTracer:
     def summarize(self, gdf, timezone=DEFAULT_TIMEZONE):
         """Build a plain dict answering: what is this, and when did it happen.
 
-        This is the direct fix for "what time did this happen" — first and
-        last contact are reported in both UTC and the requested local zone,
-        with the zone name spelled out rather than left as an offset.
+        `first_contact_utc`/`last_contact_utc` are always present -- UTC is
+        the one zone that's never ambiguous. `first_contact_local`/
+        `last_contact_local` only appear when `gdf` has a `point_time_local`
+        column (i.e. process_flight_data was called with a timezone), and
+        never replace the UTC fields.
         """
         if gdf.empty:
             return {}
@@ -343,7 +352,7 @@ class FlightTracer:
         def fmt(ts):
             return ts.strftime("%Y-%m-%d %H:%M:%S %Z") if pd.notna(ts) else None
 
-        return {
+        summary = {
             "icao": first.get("icao"),
             "registration": first.get("registration"),
             "aircraft_type": first.get("model"),
@@ -354,8 +363,6 @@ class FlightTracer:
             "num_points": len(gdf),
             "first_contact_utc": fmt(first["point_time_utc"]),
             "last_contact_utc": fmt(last["point_time_utc"]),
-            "first_contact_local": fmt(first["point_time_local"]),
-            "last_contact_local": fmt(last["point_time_local"]),
             "timezone": timezone,
             "duration_minutes": round(duration.total_seconds() / 60, 1),
             "max_altitude_ft": float(gdf["altitude"].max()) if "altitude" in gdf and gdf["altitude"].notna().any() else None,
@@ -365,28 +372,44 @@ class FlightTracer:
             ) if "position_source" in gdf else False,
         }
 
+        if "point_time_local" in gdf.columns:
+            summary["first_contact_local"] = fmt(first["point_time_local"])
+            summary["last_contact_local"] = fmt(last["point_time_local"])
+
+        return summary
+
     def headline_for(self, summary):
-        """A one-line, plain-English answer to 'what happened and when'."""
+        """A one-line, plain-English answer to 'what happened and when'.
+
+        UTC is always shown. If a local zone was requested, it leads, with
+        UTC given right alongside it on its own line -- never the other way
+        around, so a glance always finds the zone-proof time too.
+        """
         if not summary:
             return "No trace data found."
 
         label = summary.get("registration") or summary.get("icao", "").upper()
         aircraft = summary.get("description") or summary.get("aircraft_type") or ""
-        start = summary.get("first_contact_local")
-        end = summary.get("last_contact_local")
-        duration = summary.get("duration_minutes")
-        legs = summary.get("num_legs")
-
         parts = [f"{label}"]
         if aircraft:
             parts.append(f"({aircraft}, hex {summary.get('icao')})")
         line1 = " ".join(parts)
 
-        if start and end:
-            line2 = f"Tracked {start} \u2192 {end} ({duration:g} min, {legs} leg{'s' if legs != 1 else ''})"
-        else:
-            line2 = "No timed positions found."
+        utc_start, utc_end = summary.get("first_contact_utc"), summary.get("last_contact_utc")
+        if not utc_start or not utc_end:
+            return f"{line1}\nNo timed positions found."
 
+        duration = summary.get("duration_minutes")
+        legs = summary.get("num_legs")
+        leg_word = f"{legs} leg{'s' if legs != 1 else ''}"
+
+        local_start, local_end = summary.get("first_contact_local"), summary.get("last_contact_local")
+        if local_start and local_end:
+            line2 = f"Tracked {local_start} \u2192 {local_end} ({duration:g} min, {leg_word})"
+            line3 = f"UTC: {utc_start} \u2192 {utc_end}"
+            return f"{line1}\n{line2}\n{line3}"
+
+        line2 = f"Tracked {utc_start} \u2192 {utc_end} ({duration:g} min, {leg_word})"
         return f"{line1}\n{line2}"
 
     # ------------------------------------------------------------------

@@ -6,7 +6,9 @@ __pycache__/
 # local
 DEPLOY.md
 fetch_recent_flight.py
-data/test/
+
+# flight-tracer trace's default --output directory
+data/
 
 # C extensions
 *.so

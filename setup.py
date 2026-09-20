@@ -28,6 +28,7 @@ setup(
     ],
     extras_require={
         "faa": ["hangarbay"],
+        "tz": ["timezonefinder"],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
