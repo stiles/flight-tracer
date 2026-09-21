@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-20
+
 ### Added
 
 - Multi-leg handling: `flight-tracer trace` now detects when an aircraft
