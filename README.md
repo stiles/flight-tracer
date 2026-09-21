@@ -115,6 +115,42 @@ Requires the `tz` extra: `pip install "flight-tracer[tz]"` (quoted, for zsh).
 
 Earlier versions split legs by a configurable time-gap threshold. ADS-B Exchange already marks the start of each leg in its own data (`flags & 2` in the raw trace, its own landing/takeoff detector), so FlightTracer just reads that flag instead of guessing from a gap in timestamps. Nothing to tune.
 
+### When one aircraft flew several flights
+
+A busy commercial aircraft's "recent" trace is often several distinct flights, not one — an A320 doing a day of rotations, say. Cramming five takeoffs and landings into one map and one timeline chart reads as one confusing flight rather than five ordinary ones, so a multi-leg trace renders differently by default:
+
+```
+data/a6f3d3_recent_20260920/
+├── trace.csv, points.geojson, line.geojson, summary.json   # the whole trace, every leg
+├── overview.png       # all legs on one map, legended by flight (callsign + date)
+├── leg1_VOC4070/       # each leg gets its own full single-flight render:
+│   ├── map.png, altitude.png, speed.png, trace.csv, points.geojson, line.geojson, summary.json
+├── leg2_VOC4071/
+├── leg3_VOC4062/
+├── leg4_VOC4062/
+└── leg5_VOC4062/
+```
+
+Running interactively with more than one leg and no `--leg` prints the leg table and asks:
+
+```
+5 legs found -- this aircraft flew more than once in this window:
+   1  VOC4070    Sep 20 00:13 → Sep 20 00:16 UTC  (3 min, 26 pts)
+   2  VOC4071    Sep 20 01:26 → Sep 20 03:10 UTC  (104 min, 537 pts)
+   3  VOC4062    Sep 20 12:59 → Sep 20 15:37 UTC  (159 min, 644 pts)
+   4  VOC4062    Sep 20 17:01 → Sep 20 18:26 UTC  (84 min, 268 pts)
+   5  VOC4062    Sep 20 20:20 → Sep 21 01:11 UTC  (292 min, 845 pts)
+Which leg? (a number, 'latest', or 'all')
+```
+
+Pass `--leg` to skip the prompt: a number narrows *everything* (data and renders) to just that flight, same flat shape as a single-leg trace; `latest` picks the most recent leg; `all` (the default, including in a non-interactive run — a script or cron job is never left hanging on a prompt) renders every leg separately plus the overview.
+
+```bash
+flight-tracer trace --icao a6f3d3 --leg 3       # just the San José -> Mexico City flight
+flight-tracer trace --icao a6f3d3 --leg latest  # whatever it's doing most recently
+flight-tracer trace --icao a6f3d3 --leg all     # every leg, explicitly
+```
+
 ### Basemaps
 
 Default is `esri-light`, a quiet gray canvas that lets the route carry the map. Other options: `osm`, `esri-street`, `esri-topo`, `esri-satellite`, `esri-natgeo`. Carto withdrew anonymous tile access, so any old `carto`/`positron` reference is mapped onto `esri-light` automatically rather than silently failing.

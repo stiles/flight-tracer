@@ -78,6 +78,27 @@ class TestProcessFlightData(unittest.TestCase):
         df["point_time_utc"] = base_time + pd.to_timedelta(df["seconds_after_timestamp"], unit="s")
         return df
 
+    def test_call_sign_fills_within_a_leg_not_across_leg_boundaries(self):
+        # The callsign broadcast doesn't always arrive in a leg's first few
+        # messages. A leg's leading points should pick up its own later
+        # callsign (via backfill), not inherit the previous leg's, which
+        # would otherwise split one physical leg into two flight_leg groups.
+        rows = [
+            self._raw_row(0, flags=0, details={"flight": "VOC4071"}),
+            self._raw_row(10, flags=0),  # still leg 1, VOC4071
+            self._raw_row(20, flags=2),  # new leg -- callsign not yet broadcast
+            self._raw_row(30, flags=0),  # still no callsign broadcast this leg
+            self._raw_row(40, flags=0, details={"flight": "VOC4062"}),  # now it arrives
+            self._raw_row(50, flags=0),
+        ]
+        df = self._raw_df(rows)
+        tracer = FlightTracer(aircraft_ids=["a40442"])
+        gdf = tracer.process_flight_data(df, filter_ground=False)
+
+        leg2 = gdf[gdf["leg_id"] == 2]
+        self.assertTrue((leg2["call_sign"] == "VOC4062").all())
+        self.assertEqual(gdf["flight_leg"].nunique(), 2)
+
     def test_flags_drive_leg_boundaries_not_a_time_gap(self):
         rows = [
             self._raw_row(0, flags=0, details={"flight": "N358TV"}),
@@ -90,7 +111,10 @@ class TestProcessFlightData(unittest.TestCase):
         gdf = tracer.process_flight_data(df, filter_ground=False)
 
         self.assertListEqual(gdf["leg_id"].tolist(), [1, 1, 2, 2])
-        self.assertTrue((gdf["call_sign"] == "N358TV").all())
+        # Leg 1 has its own callsign; leg 2 broadcasts none in this fixture
+        # and correctly falls back to UNKNOWN rather than inheriting leg 1's.
+        self.assertTrue((gdf.loc[gdf["leg_id"] == 1, "call_sign"] == "N358TV").all())
+        self.assertTrue((gdf.loc[gdf["leg_id"] == 2, "call_sign"] == "UNKNOWN").all())
 
     def test_filters_ground_points(self):
         rows = [
@@ -102,6 +126,25 @@ class TestProcessFlightData(unittest.TestCase):
         gdf = tracer.process_flight_data(df, filter_ground=True)
         self.assertEqual(len(gdf), 1)
         self.assertEqual(gdf.iloc[0]["altitude"], 1500)
+
+    def test_summarize_num_legs_counts_distinct_legs_not_max_id(self):
+        # A gdf filtered down to a single leg keeps that leg's original
+        # leg_id (e.g. 3), which max() would misreport as "3 legs" for what
+        # is actually one flight.
+        rows = [
+            self._raw_row(0, flags=0),
+            self._raw_row(10, flags=0),
+        ]
+        df = self._raw_df(rows)
+        tracer = FlightTracer(aircraft_ids=["a40442"])
+        gdf = tracer.process_flight_data(df, filter_ground=False)
+        gdf["leg_id"] = 3  # simulate a leg filtered out of a longer, multi-leg trace
+        gdf["flight_leg"] = "N358TV_leg3"
+
+        summary = tracer.summarize(gdf)
+        self.assertEqual(summary["num_legs"], 1)
+        self.assertIn("1 leg)", tracer.headline_for(summary))
+        self.assertNotIn("3 legs", tracer.headline_for(summary))
 
     def test_defaults_to_utc_only_no_local_column(self):
         rows = [self._raw_row(0, flags=0)]

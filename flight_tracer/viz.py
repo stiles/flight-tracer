@@ -122,13 +122,21 @@ def _add_basemap(ax, background, zoom=None):
 
 
 def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
-             background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None):
-    """Plot a flight trace: route, start/end markers, basemap and CNN-style chrome.
+             background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None,
+             leg_labels=None):
+    """Plot a flight trace: route, contact markers, basemap and CNN-style chrome.
 
     `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
     not a full sentence -- the basemap's own credit is added automatically,
     so the saved source line reads "Sources: ADS-B Exchange (flight); Esri
     (basemap)" rather than crediting only one of the two things on the map.
+
+    `leg_labels`: optional {flight_leg: label} dict, for a multi-leg overview
+    (e.g. "VOC4062 -- Sep 20, 13:00 UTC"). When given, the legend identifies
+    each leg by that label instead of the single-flight first/last-contact
+    markers -- with several distinct flights on one map, one global
+    start/end pair says less than which line is which flight. Each leg gets
+    a small dot at its own start instead, colored to match its line.
     """
     if gdf_points.crs is None:
         gdf_points = gdf_points.set_crs(epsg=4326)
@@ -157,15 +165,28 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     else:
         points_3857.plot(ax=ax, marker="o", markersize=6, color=COLOR_FLIGHT, zorder=3)
 
-    # First/last contact markers -- not "start/end": what's plotted is where
-    # ADS-B picked up and lost the signal, which in a crash can sit well
-    # short of where the aircraft actually came down.
-    start = points_3857.iloc[0]
-    end = points_3857.iloc[-1]
-    ax.scatter([start.geometry.x], [start.geometry.y], s=60, color=COLOR_FIRST_CONTACT,
-               edgecolor="white", linewidth=1.2, zorder=5, label="First contact")
-    ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_LAST_CONTACT,
-               edgecolor="white", linewidth=1.2, zorder=5, marker="s", label="Last contact")
+    if leg_labels:
+        # Multi-leg overview: legend by flight (a color swatch per leg),
+        # not by first/last contact -- which flight is which matters more
+        # here than where the whole tracked window happened to start or end.
+        sort_col = "point_time_utc" if "point_time_utc" in points_3857.columns else points_3857.columns[0]
+        for leg, group in points_3857.groupby("flight_leg"):
+            leg_start = group.sort_values(sort_col).iloc[0]
+            color = colors.get(leg, COLOR_FLIGHT)
+            ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=40, color=color,
+                       edgecolor="white", linewidth=1, zorder=5, label=leg_labels.get(leg, leg))
+        legend_fontsize = 8
+    else:
+        # First/last contact -- not "start/end": what's plotted is where
+        # ADS-B picked up and lost the signal, which in a crash can sit well
+        # short of where the aircraft actually came down.
+        start = points_3857.iloc[0]
+        end = points_3857.iloc[-1]
+        ax.scatter([start.geometry.x], [start.geometry.y], s=60, color=COLOR_FIRST_CONTACT,
+                   edgecolor="white", linewidth=1.2, zorder=5, label="First contact")
+        ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_LAST_CONTACT,
+                   edgecolor="white", linewidth=1.2, zorder=5, marker="s", label="Last contact")
+        legend_fontsize = 9
 
     xmin, ymin, xmax, ymax = points_3857.total_bounds
     x_pad = max((xmax - xmin) * pad_factor, 500)
@@ -197,7 +218,7 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     credit = _add_basemap(ax, background, zoom=zoom)
 
     ax.set_axis_off()
-    ax.legend(loc="lower right", fontsize=9, frameon=True, facecolor="white", framealpha=0.85)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, facecolor="white", framealpha=0.85)
 
     fig.text(0.02, 0.97, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
     if dek:

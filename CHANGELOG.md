@@ -9,7 +9,54 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Multi-leg handling: `flight-tracer trace` now detects when an aircraft
+  flew several distinct flights in the requested window (common for any
+  busy commercial aircraft) and renders each leg separately -- one full
+  single-flight map/chart/summary per leg, in its own subfolder, plus an
+  `overview.png` legended by flight instead of cramming every leg into one
+  confusing map and timeline chart.
+- `--leg`: a leg number, `latest`, or `all` (the default) to control the
+  above. Prompts interactively when omitted and more than one leg is
+  found; defaults to `all` without prompting when not running in a
+  terminal, so a script or cron job never hangs waiting for input.
+- `FlightTracer.leg_table()`: per-leg callsign, UTC start/end, duration and
+  point count, used to detect and describe a multi-leg trace before
+  rendering it.
+
+### Fixed
+
+- `summarize()`'s `num_legs` used `leg_id.max()`, which misreports a trace
+  already filtered down to one leg (e.g. leg 3 of 5) as "3 legs" instead
+  of 1. Now counts distinct leg IDs present.
+- Callsigns were forward-filled per aircraft globally rather than within
+  each leg, so a leg whose callsign hadn't been broadcast yet in its first
+  few messages inherited whatever the *previous* leg's callsign was --
+  silently splitting one physical leg into two entries wherever something
+  grouped by `flight_leg` (map legends, `create_linestrings`). Now filled
+  within each `(icao, leg_id)` group, backfilling a leg's own later
+  callsign into its leading points instead.
+- `pip install flight-tracer[faa]`/`[tz]` fails on zsh (macOS's default
+  shell) with "no matches found" -- square brackets are a glob pattern to
+  zsh. Quoted every `pip install ...[extra]` in the README and, more
+  importantly, in the `ImportError` messages users actually see and
+  copy-paste when `hangarbay` or `timezonefinder` is missing.
+
 ## [0.2.1] - 2026-09-20
+
+### Fixed
+
+- `--timezone auto` printed a raw `AttributeError: _ARRAY_API not found`
+  traceback on environments with a stale `scipy` (built against NumPy 1.x's
+  ABI) installed alongside NumPy 2.x. `timezonefinder`'s `numba` dependency
+  opportunistically tries to use whatever `scipy` happens to be present for
+  BLAS acceleration, unrelated to `flight-tracer` itself; the crash was
+  caught internally and `--timezone auto` still resolved correctly either
+  way, which is exactly what made it look like noise instead of the real
+  defect it was. Sets `NUMBA_DISABLE_JIT=1` before importing
+  `timezonefinder` (only if the caller hasn't already set an opinion),
+  which skips the BLAS-acceleration path entirely.
 
 ## [0.2.0] - 2026-09-20
 

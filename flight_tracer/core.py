@@ -215,15 +215,22 @@ class FlightTracer:
         df["leg_id"] = df.groupby("icao")["new_leg"].cumsum() + 1
 
         # 'aircraft_details' only arrives on rows where something changed, so
-        # forward-fill it to know the callsign at every point.
+        # fill it in to know the callsign at every point. Fill within each
+        # (icao, leg_id) group, not across leg boundaries: a forward-fill
+        # alone leaves a leg's leading points carrying the *previous* leg's
+        # callsign until its own is broadcast, which then splits one
+        # physical leg into two wherever something groups by flight_leg
+        # (map legends, create_linestrings) even though leg_id never changed.
         details = df["aircraft_details"].apply(lambda d: d if isinstance(d, dict) else {})
         df["call_sign"] = details.apply(lambda d: d.get("flight")).apply(
             lambda v: v.strip() if isinstance(v, str) else v
         )
-        df["call_sign"] = df.groupby("icao")["call_sign"].ffill().fillna("UNKNOWN")
         df["squawk"] = details.apply(lambda d: d.get("squawk"))
-        df["squawk"] = df.groupby("icao")["squawk"].ffill()
         df["emergency"] = details.apply(lambda d: d.get("emergency"))
+
+        df["call_sign"] = df.groupby(["icao", "leg_id"])["call_sign"].transform(lambda s: s.ffill().bfill())
+        df["call_sign"] = df["call_sign"].fillna("UNKNOWN")
+        df["squawk"] = df.groupby(["icao", "leg_id"])["squawk"].transform(lambda s: s.ffill().bfill())
 
         df["flight_leg"] = df["call_sign"] + "_leg" + df["leg_id"].astype(str)
 
@@ -283,6 +290,33 @@ class FlightTracer:
             })
 
         return gpd.GeoDataFrame(legs, crs=gdf.crs)
+
+    def leg_table(self, gdf):
+        """Per-leg breakdown: call sign, UTC start/end, duration, points.
+
+        Lets a caller decide *how* to render a trace before doing it.
+        Cramming several distinct flights (a busy airliner's full day, say)
+        into one map or one timeline chart reads as one confusing flight
+        rather than several ordinary ones.
+        """
+        if gdf.empty or "leg_id" not in gdf.columns:
+            return []
+
+        legs = []
+        for leg_id, group in gdf.groupby("leg_id"):
+            group = group.sort_values("point_time_utc")
+            first, last = group.iloc[0], group.iloc[-1]
+            duration = (last["point_time_utc"] - first["point_time_utc"]).total_seconds() / 60
+            legs.append({
+                "leg_id": int(leg_id),
+                "call_sign": first.get("call_sign", "UNKNOWN"),
+                "start_utc": first["point_time_utc"],
+                "end_utc": last["point_time_utc"],
+                "duration_minutes": round(duration, 1),
+                "num_points": len(group),
+            })
+
+        return sorted(legs, key=lambda leg: leg["leg_id"])
 
     # ------------------------------------------------------------------
     # Output
@@ -359,7 +393,10 @@ class FlightTracer:
             "description": first.get("desc"),
             "owner_op": first.get("owner_op"),
             "call_signs": sorted(gdf["call_sign"].dropna().unique().tolist()) if "call_sign" in gdf else [],
-            "num_legs": int(gdf["leg_id"].max()) if "leg_id" in gdf and not gdf.empty else 0,
+            # nunique(), not max(): a gdf filtered down to one leg keeps that
+            # leg's original leg_id (e.g. 3), and max() would report "3 legs"
+            # for what's actually a single flight.
+            "num_legs": int(gdf["leg_id"].nunique()) if "leg_id" in gdf and not gdf.empty else 0,
             "num_points": len(gdf),
             "first_contact_utc": fmt(first["point_time_utc"]),
             "last_contact_utc": fmt(last["point_time_utc"]),
