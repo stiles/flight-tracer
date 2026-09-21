@@ -71,7 +71,7 @@ def resolve_n_number(n_number):
             "Install it with:\n"
             "    pip install hangarbay\n"
             "or install flight-tracer with the faa extra:\n"
-            "    pip install flight-tracer[faa]"
+            '    pip install "flight-tracer[faa]"'
         ) from exc
 
     df = hb.search(n_number, skip_age_check=True)
@@ -126,7 +126,7 @@ def resolve_timezone(timezone, lat=None, lon=None):
                 "Install it with:\n"
                 "    pip install timezonefinder\n"
                 "or install flight-tracer with the tz extra:\n"
-                "    pip install flight-tracer[tz]"
+                '    pip install "flight-tracer[tz]"'
             ) from exc
 
         zone = TimezoneFinder().timezone_at(lat=float(lat), lng=float(lon))

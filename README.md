@@ -29,8 +29,10 @@ pip install flight-tracer
 N-number lookups need the FAA registry client, [hangarbay](https://pypi.org/project/hangarbay/):
 
 ```bash
-pip install flight-tracer[faa]
+pip install "flight-tracer[faa]"
 ```
+
+(the quotes matter on zsh, macOS's default shell -- without them, `[faa]` gets read as a glob pattern and zsh fails with "no matches found")
 
 Without it, `--icao` and `--url` still work; `--n-number` raises a clear error telling you to install it.
 
@@ -107,7 +109,7 @@ flight-tracer trace --icao a40442 --date 2026-09-16 --timezone auto
 # Inferred timezone from location: America/Los_Angeles
 ```
 
-Requires the `tz` extra: `pip install flight-tracer[tz]`.
+Requires the `tz` extra: `pip install "flight-tracer[tz]"` (quoted, for zsh).
 
 ### Flight legs, decoded rather than guessed
 
