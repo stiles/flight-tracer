@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-20
+
 ## [0.2.0] - 2026-09-20
 
 A rebuild around one command instead of a fetch/process/export chain, driven
