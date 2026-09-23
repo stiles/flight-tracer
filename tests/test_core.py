@@ -27,6 +27,17 @@ class TestGenerateUrls(unittest.TestCase):
         self.assertIn("trace_full_a40442.json", urls[0][0])
         self.assertIn("/data/traces/", urls[0][0])
 
+    def test_generate_urls_keeps_tilde_for_non_icao_hex(self):
+        # ADS-B Exchange marks non-ICAO addresses (TIS-B, track-file IDs with
+        # no transponder identity behind them) with a leading '~', and its
+        # trace files are actually named with the tilde included -- dropping
+        # it 404s.
+        tracer = FlightTracer(aircraft_ids=["~29962a"])
+        urls = tracer.generate_urls(date(2026, 9, 23), date(2026, 9, 23))
+        self.assertEqual(len(urls), 1)
+        expected_url = "https://globe.adsbexchange.com/globe_history/2026/09/23/traces/2a/trace_full_~29962a.json"
+        self.assertEqual(urls[0][0], expected_url)
+
 
 class TestParseAdsbxUrl(unittest.TestCase):
     def test_parses_icao_and_replay_date(self):
@@ -46,6 +57,14 @@ class TestParseAdsbxUrl(unittest.TestCase):
     def test_raises_without_icao(self):
         with self.assertRaises(ValueError):
             parse_adsbx_url("https://globe.adsbexchange.com/?lat=34.2")
+
+    def test_parses_tilde_prefixed_non_icao_hex(self):
+        # ADS-B Exchange's own convention for a non-ICAO address (e.g.
+        # TIS-B / a track-file ID with no transponder identity behind it).
+        url = "https://globe.adsbexchange.com/?replay=2026-09-23-17:36&icao=~29962a&lat=34.018&lon=-118.428&zoom=11.5"
+        result = parse_adsbx_url(url)
+        self.assertEqual(result["icao"], "~29962a")
+        self.assertEqual(result["date"].isoformat(), "2026-09-23")
 
 
 class TestProcessFlightData(unittest.TestCase):

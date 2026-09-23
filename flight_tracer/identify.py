@@ -7,7 +7,11 @@ import re
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
-ICAO_RE = re.compile(r"^[0-9a-fA-F]{6}$")
+# A leading '~' marks a non-ICAO address (e.g. TIS-B or a track-file ID with
+# no transponder-broadcast identity behind it) -- ADS-B Exchange's own
+# convention, not something flight-tracer invents. Keep it: it's part of the
+# hex ADS-B Exchange expects back on its trace URLs, not a strippable prefix.
+ICAO_RE = re.compile(r"^~?[0-9a-fA-F]{6}$")
 
 
 def parse_adsbx_url(url):
@@ -24,10 +28,10 @@ def parse_adsbx_url(url):
 
     icao = (params.get("icao") or [None])[0]
     if not icao:
-        match = re.search(r"icao=([0-9a-fA-F]{6})", url)
+        match = re.search(r"icao=(~?[0-9a-fA-F]{6})", url)
         icao = match.group(1) if match else None
     if not icao or not ICAO_RE.match(icao):
-        raise ValueError(f"Could not find a 6-character ICAO hex in URL: {url}")
+        raise ValueError(f"Could not find a 6-character ICAO hex (optionally '~'-prefixed) in URL: {url}")
 
     result = {
         "icao": icao.lower(),

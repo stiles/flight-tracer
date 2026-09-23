@@ -9,6 +9,15 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Fixed
+
+- `--url` and `parse_adsbx_url` now accept ADS-B Exchange's `~`-prefixed
+  non-ICAO hexes (TIS-B / track-file IDs with no transponder identity
+  behind them, e.g. `~29962a`), instead of raising "Could not find a
+  6-character ICAO hex." The tilde is part of the hex ADS-B Exchange
+  expects back on its trace URLs -- dropping it 404s -- so it's kept
+  through fetching, not just parsing.
+
 ## [0.2.2] - 2026-09-20
 
 ### Added
