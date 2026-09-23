@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-23
+
 ### Fixed
 
 - `--url` and `parse_adsbx_url` now accept ADS-B Exchange's `~`-prefixed
