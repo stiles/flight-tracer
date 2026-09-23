@@ -70,6 +70,16 @@ flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:
 
 The `icao` and `replay` date come straight out of the URL — nothing to retype. A live link with no `replay` param (just `?icao=...`) is treated as recent, same as the bare `--icao` case.
 
+**The hex on the globe starts with `~`.**
+
+```bash
+flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-23-17:36&icao=~29962a&lat=34.018&lon=-118.428&zoom=11.5"
+```
+
+A `~` prefix is ADS-B Exchange's own marker for a non-ICAO address — the contact never broadcast a real ICAO hex, so ADS-B Exchange assigned one from raw radar/TIS-B data instead. FlightTracer keeps the `~` rather than stripping it, since it's part of the hex ADS-B Exchange expects back on its trace URLs.
+
+Expect a thinner summary than a normal ADS-B contact: no registration, aircraft type or owner (there's no ICAO address behind the hex to look up), and `position_source` reading `tisb_trackfile` or `tisb_other` for every point rather than `adsb_icao`. That's a real radar/TIS-B-only track, not multilateration — MLAT still requires a Mode S transponder heard by several ground receivers, and shows up as ordinary `adsb_icao` positions with `has_multilaterated_positions: true` in the summary. A track that's *entirely* `tisb_*`, tight low-altitude loops for the better part of an hour, and no cooperative surveillance at all is the signature of a law-enforcement or government aircraft flying without ADS-B Out — an LAPD Air Support-style helicopter orbit over an incident, for instance, rather than an anonymized-but-still-ADS-B flight (which would keep its `~` hex but still show `adsb_icao` positions).
+
 ## What one run produces
 
 ```
