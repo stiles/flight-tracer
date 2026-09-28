@@ -9,6 +9,20 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-28
+
+### Added
+
+- Show tracking gaps longer than five minutes as dashed, approximate
+  connections on overview and individual-leg maps. Configure the cutoff
+  with `--gap-minutes` or `plot_map(gap_minutes=...)`.
+
+### Fixed
+
+- Keep Date Line crossings together on maps and wrap basemap tiles across
+  the seam. Split exported route geometry at ±180° to prevent false lines
+  across the world without changing flight-leg boundaries.
+
 ## [0.2.3] - 2026-09-23
 
 ### Fixed
