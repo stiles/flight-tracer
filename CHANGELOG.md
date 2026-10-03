@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-03
+
 ### Added
 
 - Add `--title`, `--dek` and repeatable `--label "LAT,LON,Text"` to `trace`
