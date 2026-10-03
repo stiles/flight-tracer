@@ -42,6 +42,16 @@ flight-tracer trace --n-number N868FD \
 
 Both dates are included. Each detected leg gets its own folder, plus an overview map. Use `--leg 1` for one leg or `--leg latest` for the most recent detected leg.
 
+### Select a time window
+
+```bash
+flight-tracer trace --icao a9a1ad --date 2020-01-26 \
+  --after 2020-01-26T09:00:00 --before 2020-01-26T10:00:00 \
+  --window-timezone America/Los_Angeles --timezone America/Los_Angeles
+```
+
+Bounds are inclusive. Timestamps without an offset default to UTC unless `--window-timezone` is set. `--timezone` controls display separately. For older archives, `--infer-legs` can optionally detect explicit ground stops. See the [detailed January 26 case study](https://github.com/stiles/flight-tracer/blob/main/docs/examples/a9a1ad-2020-01-26.md).
+
 ### Make a portrait map with local times
 
 ```bash
@@ -79,7 +89,8 @@ data/a40442_2026-09-16_2026-09-16/
 ├── trace.csv         # Recorded points and decoded fields
 ├── points.geojson    # Point geometries
 ├── line.geojson      # Routes by leg
-└── summary.json      # Aircraft metadata, times and statistics
+├── summary.json      # Aircraft metadata, times and statistics
+└── selection.json    # Time bounds, leg selection and ground-filter settings
 ```
 
 For several detected legs, the root contains the full data and `overview.png`; subfolders such as `leg1_FDX9756/` contain each leg's data and charts. Interactive runs ask which leg to use; `--leg all` skips the prompt. Non-interactive runs default to all legs.
@@ -112,7 +123,7 @@ pip install --no-deps -e .
 
 - **Last location means last received position**, not a confirmed landing or crash site.
 - **Dashed segments approximate missing coverage.** They do not establish the path flown. Exported route geometries include connections without dash styling.
-- **Legs use the archive's boundary flags.** Older archives may lack them, so `--leg latest` cannot always isolate the final flight. Seven-field historical records are supported.
+- **Legs use the archive's boundary flags.** Older archives may lack them. Opt-in `--infer-legs` uses explicit ground stops and labels its results as estimates; otherwise use a time window. Seven-field historical records are supported.
 - **Date Line crossings are handled automatically.** Maps wrap around the Pacific where appropriate; exported routes split at ±180°.
 - **Altitude and speed are raw, uncorrected values.** Missing metadata stays empty. Times default to UTC; local time is opt-in.
 
@@ -125,6 +136,7 @@ pip install --no-deps -e .
 | [Python examples](https://github.com/stiles/flight-tracer/blob/main/docs/python.md) | Fetching, selecting time windows, plotting and working with fleets |
 | [CLI reference](https://github.com/stiles/flight-tracer/blob/main/docs/cli.md) | Options, defaults and date precedence |
 | [Changelog](https://github.com/stiles/flight-tracer/blob/main/CHANGELOG.md) | Release history |
+| [Backlog](https://github.com/stiles/flight-tracer/blob/main/BACKLOG.md) | Prioritized feature ideas and maintenance work |
 
 ## Contributing and releasing
 

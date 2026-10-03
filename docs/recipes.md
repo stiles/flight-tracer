@@ -36,7 +36,7 @@ flight-tracer trace --icao a9a1ad --date 2020-01-26 \
   --timezone America/Los_Angeles
 ```
 
-This file uses seven-field records and includes earlier activity. It has no leg-boundary flags, so `--leg latest` does **not** isolate the final departure. The CLI has no time-of-day filter yet; use the [Python time-window example](python.md#select-a-time-window-from-an-older-archive) to export the final recorded departure separately.
+This file uses seven-field records and includes earlier activity. It has no leg-boundary flags, so `--leg latest` does **not** isolate the final departure. Use `--after` / `--before` to select a time window, or opt into `--infer-legs --leg latest`. The [detailed case study](examples/a9a1ad-2020-01-26.md) covers both commands, evidence and limitations.
 
 Archive dates refer to UTC files, not local calendar days. Files may also contain earlier trace points. Always inspect the returned times.
 
@@ -106,7 +106,7 @@ This writes locally, then uploads the output folder using your configured AWS cr
 | No recent trace data | Add `--date YYYY-MM-DD` for the flight's UTC date. |
 | No airborne points | Add `--keep-ground` to inspect ground reports. |
 | `14 columns passed, passed data had 7 columns` | Update FlightTracer; the parser now supports older archives. For a local checkout, install with `pip install --no-deps -e .`. |
-| `--leg latest` still shows several flights | The archive may lack leg flags; inspect timestamps and select a time window in Python. |
+| `--leg latest` still shows several flights | The archive may lack leg flags; use `--after` / `--before` or try `--infer-legs`. |
 | OSM access-blocked tiles | Update FlightTracer. It now identifies and caches OSM requests and rejects recognizable blocked tiles, falling back to Esri Light. |
 | Missing Mapbox token | Set `MAPBOX_ACCESS_TOKEN`, choose a keyless basemap, or use `--no-plots`. |
 | `--version` is not recognized | Update the installed package and check that your shell uses the intended Python environment. |

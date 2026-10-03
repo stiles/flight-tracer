@@ -18,6 +18,7 @@ class TestCoverage(unittest.TestCase):
     def points(self):
         return gpd.GeoDataFrame({
             "icao": ["abed10"] * 4,
+            "leg_detection": ["archive_flags"] * 4,
             "leg_id": [1] * 4,
             "flight_leg": ["FDX9756_leg1"] * 4,
             "call_sign": ["FDX9756"] * 4,
@@ -75,7 +76,8 @@ class TestCoverage(unittest.TestCase):
             if multiple:
                 points.loc[2:, "leg_id"] = 2
             renderer = "_render_all_legs" if multiple else "_render_flight"
-            with patch("flight_tracer.cli.FlightTracer.get_traces", return_value=points), \
+            with CliRunner().isolated_filesystem(), \
+                 patch("flight_tracer.cli.FlightTracer.get_traces", return_value=points), \
                  patch("flight_tracer.cli.FlightTracer.process_flight_data", return_value=points), \
                  patch("flight_tracer.cli." + renderer, return_value={}) as render:
                 result = CliRunner().invoke(cli, ["trace", "--icao", "abed10", "--leg", "all",

@@ -184,12 +184,12 @@ class FlightTracer:
     # Processing
     # ------------------------------------------------------------------
 
-    def process_flight_data(self, df, filter_ground=True, timezone=DEFAULT_TIMEZONE):
+    def process_flight_data(self, df, filter_ground=True, timezone=DEFAULT_TIMEZONE, infer_legs=False):
         """Turn a raw trace DataFrame into a structured GeoDataFrame.
 
         Flight legs come straight from ADS-B Exchange's own `flags & 2`
-        marker (their landing/takeoff detector), not a configurable time-gap
-        guess, so there's nothing to tune here.
+        marker. With infer_legs=True, aircraft without markers may be split
+        at an explicitly reported ground stop; those legs are labeled inferred.
 
         Parameters:
         - df: raw trace DataFrame, as returned by get_traces().
@@ -216,6 +216,16 @@ class FlightTracer:
         # The very first point of a trace always starts leg 1, whether or not
         # ADS-B Exchange flagged it.
         df.loc[df.groupby("icao").head(1).index, "new_leg"] = False
+        df["leg_detection"] = "unmarked"
+        for icao, group in df.groupby("icao"):
+            if group["new_leg"].any():
+                df.loc[group.index, "leg_detection"] = "archive_flags"
+            elif infer_legs:
+                from .legs import ground_stop_boundaries
+                boundaries = list(ground_stop_boundaries(group))
+                if boundaries:
+                    df.loc[boundaries, "new_leg"] = True
+                    df.loc[group.index, "leg_detection"] = "inferred_ground_stop"
         df["leg_id"] = df.groupby("icao")["new_leg"].cumsum() + 1
 
         # 'aircraft_details' only arrives on rows where something changed, so
@@ -262,7 +272,7 @@ class FlightTracer:
             "vertical_rate_is_geometric", "roll",
             "icao", "registration", "model", "desc", "owner_op",
             "call_sign", "squawk", "emergency",
-            "leg_id", "flight_leg", "position_source", "is_stale",
+            "leg_id", "flight_leg", "leg_detection", "position_source", "is_stale",
         ]
         output_columns = [c for c in output_columns if c in df.columns]
 
@@ -290,6 +300,7 @@ class FlightTracer:
                 "start_time_utc": group[point_time_column].iloc[0],
                 "end_time_utc": group[point_time_column].iloc[-1],
                 "num_points": len(group),
+                "leg_detection": group["leg_detection"].iloc[0] if "leg_detection" in group else "unknown",
                 "geometry": geometry,
             })
 
@@ -405,6 +416,7 @@ class FlightTracer:
             "first_contact_utc": fmt(first["point_time_utc"]),
             "last_contact_utc": fmt(last["point_time_utc"]),
             "timezone": timezone,
+            "leg_detection": sorted(gdf["leg_detection"].unique().tolist()) if "leg_detection" in gdf else ["unknown"],
             "duration_minutes": round(duration.total_seconds() / 60, 1),
             "max_altitude_ft": float(gdf["altitude"].max()) if "altitude" in gdf and gdf["altitude"].notna().any() else None,
             "max_ground_speed_kt": float(gdf["ground_speed"].max()) if "ground_speed" in gdf and gdf["ground_speed"].notna().any() else None,

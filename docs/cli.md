@@ -20,6 +20,10 @@ flight-tracer trace
   --start / --end DATE     Historical date range (YYYY-MM-DD).
   --date DATE              Shorthand for --start/--end on the same day.
   --recent                 Force the recent-trace endpoint even if a date was found or given.
+  --after TIMESTAMP       Inclusive start bound; full date and time required.
+  --before TIMESTAMP      Inclusive end bound; full date and time required.
+  --window-timezone ZONE  Zone for bounds without an offset. Default: UTC.
+  --infer-legs             Infer ground-stop boundaries only for aircraft without leg flags.
   --leg CHOICE            A leg number, latest, or all. Prompts when interactive and omitted.
   --timezone ZONE          Add local times alongside UTC: an IANA zone (e.g. America/Chicago) or
                            'auto' to infer one from the trace's first position. Default: UTC only.
@@ -38,3 +42,17 @@ flight-tracer resolve --n-number TAIL
 ```
 
 Historical ranges include both dates. `--date` takes precedence over `--start`/`--end`, which take precedence over the URL date. `--recent` forces the recent endpoint. If only `--start` or `--end` is supplied, that date is used for both. Dates select UTC archive files; `--timezone` changes display times, not which files are fetched.
+
+## Time windows
+
+Explicit `Z` or numeric offsets take precedence over `--window-timezone`. Naive timestamps use that zone; ambiguous or nonexistent local times are rejected. Use an explicit offset to resolve a daylight-saving ambiguity. `--timezone` controls display only.
+
+Without `--date`, `--start`/`--end`, a URL date or `--recent`, the window's UTC dates select the historical files. With only one bound, its UTC date is fetched; supply a date range to search a wider interval. Explicit archive dates still control fetching even when a window extends outside them.
+
+Bounds are inclusive and apply after leg detection and ground filtering, before leg selection and output. Original leg IDs are preserved. Empty selections report an error. Windowed output folders include normalized UTC bounds; inferred runs add `_inferred`. `selection.json` records the choices. These suffixes avoid overwriting a full-day export, but rerunning the same selection still replaces its files.
+
+## Optional leg inference
+
+`--infer-legs` applies per aircraft only when no usable archive leg markers exist. It looks for consecutive explicit `ground` reports at least five minutes apart and within one kilometer, after an earlier airborne report. The later ground report starts the next inferred leg. Numeric altitude at or below zero and gaps between airborne reports never trigger this rule.
+
+This is conservative: it can miss stops without explicit ground reports, and two reports do not establish continuous ground coverage. `leg_detection` in points, routes and summaries records `archive_flags`, `inferred_ground_stop` or `unmarked`. The CLI warns about unmarked traces and labels inferred results.

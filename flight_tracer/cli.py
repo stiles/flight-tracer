@@ -8,6 +8,7 @@ import click
 from flight_tracer import __version__
 from flight_tracer.core import FlightTracer
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
+from flight_tracer.window import parse_window, select_window
 from flight_tracer.viz import DEFAULT_GAP_MINUTES, format_time_span, plot_map, plot_series, resolve_basemap
 
 
@@ -130,6 +131,8 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
         aircraft = summary.get("description") or summary.get("aircraft_type") or ""
         headline = f"{label} \u2014 {aircraft}" if aircraft else label
         dek = format_time_span(gdf)
+        if "leg_detection" in gdf and (gdf["leg_detection"] == "inferred_ground_stop").any():
+            dek += "\nLeg boundaries inferred from ground reports"
         multilaterated_note = " \u2014 some positions are multilaterated estimates" if summary.get("has_multilaterated_positions") else ""
         # plot_map credits the basemap tiles on its own, so it gets the bare
         # data-source label; the charts have no basemap, so they get a
@@ -207,6 +210,11 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD).")
 @click.option("--date", type=click.DateTime(formats=["%Y-%m-%d"]), help="Shorthand for --start/--end on the same day.")
 @click.option("--recent", is_flag=True, help="Force the recent-trace endpoint even if a date was found or given.")
+@click.option("--after", help="Inclusive start timestamp, e.g. 2020-01-26T17:00:00Z.")
+@click.option("--before", help="Inclusive end timestamp, e.g. 2020-01-26T18:00:00Z.")
+@click.option("--window-timezone", default="UTC", show_default=True,
+              help="IANA zone for window timestamps without an offset; separate from display --timezone.")
+@click.option("--infer-legs", is_flag=True, help="Infer legs from explicit ground stops when archive leg flags are absent.")
 @click.option("--leg", default=None,
               help="For a multi-leg trace: a leg number, 'latest', or 'all' (the default). "
                    "Prompted for if omitted and running interactively.")
@@ -229,7 +237,8 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
 @click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
 def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
-          filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes, aspect_ratio):
+          filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes, aspect_ratio,
+          after, before, window_timezone, infer_legs):
     """Fetch, process, map and summarize a flight trace in one step.
 
     Pick the entry point that matches what you have:
@@ -247,6 +256,11 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
     leg, 'latest', or 'all' (the default) for every leg in its own
     subfolder plus an overview map.
     """
+    try:
+        window_start, window_end = parse_window(after, before, window_timezone)
+    except Exception as exc:
+        raise click.BadParameter(str(exc), param_hint="--after / --before / --window-timezone") from None
+
     if not no_plots:
         try:
             resolve_basemap(background)
@@ -262,6 +276,9 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
         end_date = (end or start).date()
     elif date_hint and not recent:
         start_date, end_date = date_hint, date_hint
+    elif (window_start is not None or window_end is not None) and not recent:
+        start_date = (window_start if window_start is not None else window_end).date()
+        end_date = (window_end if window_end is not None else window_start).date()
     else:
         start_date, end_date = None, None
 
@@ -281,16 +298,35 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
     else:
         resolved_timezone = resolve_timezone(timezone)
 
-    gdf = tracer.process_flight_data(raw_df, filter_ground=filter_ground, timezone=resolved_timezone)
+    # Detect legs before trimming so a window preserves the original leg IDs.
+    gdf = tracer.process_flight_data(raw_df, filter_ground=filter_ground, timezone=resolved_timezone,
+                                   infer_legs=infer_legs)
     if gdf.empty:
         click.echo("No airborne points after filtering. Try --keep-ground if this aircraft never left the ground.")
         return
+
+    for aircraft, group in gdf.groupby("icao"):
+        method = group["leg_detection"].iloc[0]
+        if method == "unmarked":
+            click.echo(f"Warning: {aircraft} has no usable leg-boundary flags; 'latest' cannot separate its flights. "
+                       "Use a time window or try --infer-legs.")
+        elif method == "inferred_ground_stop":
+            click.echo(f"{aircraft}: leg boundaries inferred from ground reports (estimates).")
+    gdf = select_window(gdf, window_start, window_end)
+    if gdf.empty:
+        raise click.ClickException("No points in the selected time window after ground filtering.")
 
     icao_str = "_".join(sorted(set(icaos)))
     if use_recent:
         slug = f"{icao_str}_recent_{datetime.now().strftime('%Y%m%d')}"
     else:
         slug = f"{icao_str}_{start_date}_{end_date}"
+    if window_start is not None or window_end is not None:
+        def stamp(value):
+            return value.strftime("%Y%m%dT%H%M%S%fZ") if value is not None else "open"
+        slug += f"_window_{stamp(window_start)}_{stamp(window_end)}"
+    if infer_legs:
+        slug += "_inferred"
     output_dir = os.path.join(output, slug)
 
     legs = tracer.leg_table(gdf)
@@ -304,6 +340,15 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
             gdf = gdf[gdf["leg_id"] == leg_choice].reset_index(drop=True)
         written = _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
 
+    selection_path = os.path.join(output_dir, "selection.json")
+    os.makedirs(output_dir, exist_ok=True)
+    with open(selection_path, "w") as handle:
+        json.dump({"after_utc": str(window_start) if window_start is not None else None,
+                   "before_utc": str(window_end) if window_end is not None else None,
+                   "bounds_inclusive": True, "window_timezone": window_timezone,
+                   "infer_legs": infer_legs, "leg": leg_choice,
+                   "filter_ground": filter_ground}, handle, indent=2)
+    written["selection"] = selection_path
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")
 
     if bucket:
