@@ -1,366 +1,131 @@
-# FlightTracer: tracking ADS-B Exchange flights
+# FlightTracer
 
-FlightTracer turns whatever you have about an aircraft — an N-number, an ICAO hex, or a pasted [ADS-B Exchange](https://globe.adsbexchange.com/) URL — into a mapped, summarized flight trace in one command.
-
----
-
-## Pick the right entry point
-
-Start from what you have, not from a list of steps.
-
-| You have | Run |
-|---|---|
-| An N-number from a reporter or scanner traffic | `flight-tracer trace --n-number N358TV` |
-| An ICAO hex you spotted on the globe | `flight-tracer trace --icao a40442` |
-| A URL someone sent you from globe.adsbexchange.com | `flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442"` |
-| Just the tail number, no ICAO handy | `flight-tracer resolve --n-number N358TV` (prints the hex without fetching anything) |
-
-Each of those is the whole workflow: fetch, decode legs, map, chart, summarize. There's no separate `process` or `export` step, and no filename to remember — everything for one run lands in one folder.
-
-## Installation
+Turn an aircraft tail number, ICAO hex, or [ADS-B Exchange](https://globe.adsbexchange.com/) link into a flight map, altitude and speed charts and reusable data.
 
 ```bash
 pip install flight-tracer
-```
-
-N-number lookups need the FAA registry client, [hangarbay](https://pypi.org/project/hangarbay/):
-
-```bash
-pip install "flight-tracer[faa]"
-```
-
-(the quotes matter on zsh, macOS's default shell -- without them, `[faa]` gets read as a glob pattern and zsh fails with "no matches found")
-
-Without it, `--icao` and `--url` still work; `--n-number` raises a clear error telling you to install it.
-
----
-
-## The newsroom scenarios this is built for
-
-**A helicopter crash. You have an N-number.**
-
-```bash
-flight-tracer trace --n-number N358TV
-```
-
-This resolves the N-number to its ICAO hex via the FAA registry, then fetches ADS-B Exchange's *recent* trace — roughly the last few hours to a few days of coverage, no date required. That's the breaking-news default: you don't know the date yet, you just know it was recent.
-
-**You can see an aircraft on the globe and have its ICAO hex.**
-
-```bash
 flight-tracer trace --icao a40442
 ```
 
-Same recent-trace default. If it's not recent — the aircraft flew hours or days ago and dropped out of the short-lived recent trace — add a date:
+No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
+
+![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/main/docs/images/flight-map.png)
+
+*Example output: a Los Angeles helicopter trace using OpenStreetMap. Maps and charts default to 1920 × 1080.*
+
+## Start with what you have
+
+| You have | Command |
+|---|---|
+| ICAO hex | `flight-tracer trace --icao a40442` |
+| U.S. tail number | `flight-tracer trace --n-number N358TV` |
+| Historical date | `flight-tracer trace --icao a40442 --date 2026-09-16` |
+| ADS-B Exchange link | `flight-tracer trace --url "https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-01-26"` |
+| Tail number to look up | `flight-tracer resolve --n-number N358TV` |
+
+Tail-number lookup requires `pip install "flight-tracer[faa]"`. A callsign such as `FDX9756` cannot currently be used as an input; first find the aircraft's ICAO hex or tail number for that flight and date.
+
+## Common recipes
+
+### Fetch a date range and render every leg
 
 ```bash
-flight-tracer trace --icao a40442 --date 2026-09-14
-# or a range:
-flight-tracer trace --icao a40442 --start 2026-09-10 --end 2026-09-14
+flight-tracer trace --n-number N868FD \
+  --start 2026-09-26 --end 2026-09-27 --leg all
 ```
 
-**Someone sends you a globe.adsbexchange.com link.**
+Both dates are included. Each detected leg gets its own folder, plus an overview map. Use `--leg 1` for one leg or `--leg latest` for the most recent detected leg.
+
+### Make a portrait map with local times
 
 ```bash
-flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442&lat=34.251&lon=-118.614&zoom=7.0"
+flight-tracer trace --icao a40442 --date 2026-09-16 \
+  --aspect-ratio 9:16 --timezone America/Los_Angeles
 ```
 
-The `icao` and `replay` or `showTrace=YYYY-MM-DD` date come straight out of the URL — nothing to retype. A live link without either date parameter (just `?icao=...`) is treated as recent, same as the bare `--icao` case.
+Portrait outputs are 1080 × 1920. Local times appear alongside UTC; exported timestamps keep their full precision.
 
-Older archives with seven-field trace records are supported; unavailable measurements and aircraft metadata remain empty. Some older archives lack leg-boundary flags, so `--leg latest` cannot separate their flights automatically.
-
-**The hex on the globe starts with `~`.**
+### Change the basemap and gap threshold
 
 ```bash
-flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-23-17:36&icao=~29962a&lat=34.018&lon=-118.428&zoom=11.5"
+flight-tracer trace --icao a40442 --date 2026-09-16 \
+  --background osm --gap-minutes 2
 ```
 
-A `~` prefix is ADS-B Exchange's own marker for a non-ICAO address — the contact never broadcast a real ICAO hex, so ADS-B Exchange assigned one from raw radar/TIS-B data instead. FlightTracer keeps the `~` rather than stripping it, since it's part of the hex ADS-B Exchange expects back on its trace URLs.
+Connections across tracking gaps longer than two minutes are dashed. The default threshold is five minutes. The default basemap is `esri-light`; [see all map styles](https://github.com/stiles/flight-tracer/blob/main/docs/maps.md), including Mapbox with your own token.
 
-Expect a thinner summary than a normal ADS-B contact: no registration, aircraft type or owner (there's no ICAO address behind the hex to look up), and `position_source` reading `tisb_trackfile` or `tisb_other` for every point rather than `adsb_icao`. That's a real radar/TIS-B-only track, not multilateration — MLAT still requires a Mode S transponder heard by several ground receivers, and shows up as ordinary `adsb_icao` positions with `has_multilaterated_positions: true` in the summary. A track that's *entirely* `tisb_*`, tight low-altitude loops for the better part of an hour, and no cooperative surveillance at all is the signature of a law-enforcement or government aircraft flying without ADS-B Out — an LAPD Air Support-style helicopter orbit over an incident, for instance, rather than an anonymized-but-still-ADS-B flight (which would keep its `~` hex but still show `adsb_icao` positions).
+### Export data without charts
 
-## What one run produces
-
+```bash
+flight-tracer trace --icao a40442 --date 2026-09-16 \
+  --no-plots --formats csv,geojson --output exports
 ```
+
+## What you get
+
+A single-leg run writes:
+
+```text
 data/a40442_2026-09-16_2026-09-16/
-├── trace.csv        # every point: time (UTC + local), lat/lon, altitude, speed, leg
-├── points.geojson
-├── line.geojson      # one route per leg; MultiLineString at Date Line crossings
-├── map.png           # route over a basemap, start/end markers, headline + dek
-├── altitude.png      # altitude over time
-├── speed.png         # ground speed over time
-└── summary.json      # the plain-English answer to "what is this, and when"
+├── map.png           # Route, start and last location, dates, attribution
+├── altitude.png      # Altitude over time
+├── speed.png         # Ground speed over time
+├── trace.csv         # Recorded points and decoded fields
+├── points.geojson    # Point geometries
+├── line.geojson      # Routes by leg
+└── summary.json      # Aircraft metadata, times and statistics
 ```
 
-Every run also prints the headline straight to the terminal:
+For several detected legs, the root contains the full data and `overview.png`; subfolders such as `leg1_FDX9756/` contain each leg's data and charts. Interactive runs ask which leg to use; `--leg all` skips the prompt. Non-interactive runs default to all legs.
 
-```
-N358TV (AEROSPATIALE AS-350 Ecureuil, hex a40442)
-Tracked 2026-09-16 00:23:28 UTC → 2026-09-16 01:55:25 UTC (91.9 min, 1 leg)
-```
+Running the same aircraft/date selection again writes to the same folder. Use a different `--output` directory to keep variants.
 
-### Times are UTC unless you ask for local
+## Installation and upgrades
 
-ADS-B Exchange, ATC and pilots are all UTC-native, and a global newsroom has no reason to default to any one city's clock. So by default, everything — the terminal headline, `summary.json`, the CSV, the charts — stays in UTC, and there's no `point_time_local` column at all. One zone, nothing to get out of sync.
-
-Ask for local time with `--timezone`, and it's added *alongside* UTC, never in place of it — every artifact that shows a local time restates the same span in UTC right next to it:
+Python 3.9 or newer is required. Optional extras add tail-number lookup and automatic timezone lookup:
 
 ```bash
-flight-tracer trace --icao a40442 --date 2026-09-16 --timezone America/New_York
-# Tracked 2026-09-15 20:23:28 EDT → 2026-09-15 21:55:25 EDT (91.9 min, 1 leg)
-# UTC: 2026-09-16 00:23:28 UTC → 2026-09-16 01:55:25 UTC
+pip install "flight-tracer[faa,tz]"
+flight-tracer --version
+flight-tracer trace --help
 ```
 
-Don't know the local zone for wherever this happened? `--timezone auto` infers it from the trace's first position (via [timezonefinder](https://pypi.org/project/timezonefinder/), offline, no API):
+Quote extras such as `[faa,tz]` in zsh. To upgrade an existing installation:
 
 ```bash
-flight-tracer trace --icao a40442 --date 2026-09-16 --timezone auto
-# Inferred timezone from location: America/Los_Angeles
+pip install --upgrade flight-tracer
 ```
 
-Requires the `tz` extra: `pip install "flight-tracer[tz]"` (quoted, for zsh).
-
-### Flight legs, decoded rather than guessed
-
-Earlier versions split legs by a configurable time-gap threshold. ADS-B Exchange already marks the start of each leg in its own data (`flags & 2` in the raw trace, its own landing/takeoff detector), so FlightTracer just reads that flag instead of guessing from a gap in timestamps. Nothing to tune.
-
-### When one aircraft flew several flights
-
-A busy commercial aircraft's "recent" trace is often several distinct flights, not one — an A320 doing a day of rotations, say. Cramming five takeoffs and landings into one map and one timeline chart reads as one confusing flight rather than five ordinary ones, so a multi-leg trace renders differently by default:
-
-```
-data/a6f3d3_recent_20260920/
-├── trace.csv, points.geojson, line.geojson, summary.json   # the whole trace, every leg
-├── overview.png       # all legs on one map, legended by flight (callsign + date)
-├── leg1_VOC4070/       # each leg gets its own full single-flight render:
-│   ├── map.png, altitude.png, speed.png, trace.csv, points.geojson, line.geojson, summary.json
-├── leg2_VOC4071/
-├── leg3_VOC4062/
-├── leg4_VOC4062/
-└── leg5_VOC4062/
-```
-
-Running interactively with more than one leg and no `--leg` prints the leg table and asks:
-
-```
-5 legs found -- this aircraft flew more than once in this window:
-   1  VOC4070    Sep 20 00:13 → Sep 20 00:16 UTC  (3 min, 26 pts)
-   2  VOC4071    Sep 20 01:26 → Sep 20 03:10 UTC  (104 min, 537 pts)
-   3  VOC4062    Sep 20 12:59 → Sep 20 15:37 UTC  (159 min, 644 pts)
-   4  VOC4062    Sep 20 17:01 → Sep 20 18:26 UTC  (84 min, 268 pts)
-   5  VOC4062    Sep 20 20:20 → Sep 21 01:11 UTC  (292 min, 845 pts)
-Which leg? (a number, 'latest', or 'all')
-```
-
-Pass `--leg` to skip the prompt: a number narrows *everything* (data and renders) to just that flight, same flat shape as a single-leg trace; `latest` picks the most recent leg; `all` (the default, including in a non-interactive run — a script or cron job is never left hanging on a prompt) renders every leg separately plus the overview.
+For local development, run this from the repository after installing dependencies:
 
 ```bash
-flight-tracer trace --icao a6f3d3 --leg 3       # just the San José -> Mexico City flight
-flight-tracer trace --icao a6f3d3 --leg latest  # whatever it's doing most recently
-flight-tracer trace --icao a6f3d3 --leg all     # every leg, explicitly
+pip install --no-deps -e .
 ```
 
-### Basemaps
+## Understand the trace
 
-Maps and charts default to a **16:9 landscape frame (1920 × 1080)**.
-Use `--aspect-ratio 9:16` for a **1080 × 1920 portrait frame**; it applies
-to the overview, individual flight maps, and altitude/speed charts:
+- **Last location means last received position**, not a confirmed landing or crash site.
+- **Dashed segments approximate missing coverage.** They do not establish the path flown. Exported route geometries include connections without dash styling.
+- **Legs use the archive's boundary flags.** Older archives may lack them, so `--leg latest` cannot always isolate the final flight. Seven-field historical records are supported.
+- **Date Line crossings are handled automatically.** Maps wrap around the Pacific where appropriate; exported routes split at ±180°.
+- **Altitude and speed are raw, uncorrected values.** Missing metadata stays empty. Times default to UTC; local time is opt-in.
 
-```bash
-flight-tracer trace --icao a40442 --aspect-ratio 9:16
-```
+## More examples and reference
 
-The map fills its available panel without stretching geography. Headings,
-deks, and sources wrap to fit the frame. Dates read like
-“Oct. 3, 2026 · 3:37–4:27 p.m. UTC”; local times retain a separate UTC line.
-The exported data keeps full timestamp precision.
+| Guide | What you'll find |
+|---|---|
+| [Recipes](https://github.com/stiles/flight-tracer/blob/main/docs/recipes.md) | Historical links, older archives, ground points, timezones and troubleshooting |
+| [Map styling](https://github.com/stiles/flight-tracer/blob/main/docs/maps.md) | Aspect ratios, basemaps, Mapbox tokens, OSM caching and tracking gaps |
+| [Python examples](https://github.com/stiles/flight-tracer/blob/main/docs/python.md) | Fetching, selecting time windows, plotting and working with fleets |
+| [CLI reference](https://github.com/stiles/flight-tracer/blob/main/docs/cli.md) | Options, defaults and date precedence |
+| [Changelog](https://github.com/stiles/flight-tracer/blob/main/CHANGELOG.md) | Release history |
 
-A borderless legend sits below the map, above the source credits. Small
-black and orange circles mark **Start** and **Last location**. The last
-received position is not assumed to be a landing. Overview flight keys and
-tracking-gap explanations use the same footer area and wrap to fit.
+## Contributing and releasing
 
-In Python, both `plot_map` and `plot_series` accept `aspect_ratio="9:16"`.
-An explicit `figsize` still overrides the preset for custom-sized output.
+Run checks with `python -m pytest tests/`. See [PUBLISH.md](https://github.com/stiles/flight-tracer/blob/main/PUBLISH.md) for the release workflow.
 
-Routes crossing the International Date Line stay together on the map, with
-basemap tiles wrapped across the seam. Exported routes split at ±180° into
-a MultiLineString so GIS tools do not draw a line across the world. These
-splits do not change flight legs, timestamps, or recorded positions.
+## Credits and license
 
-Missing tracking coverage is shown separately: map connections between
-positions more than five minutes apart are dashed and labeled as approximate
-connections in the legend. They do not show the aircraft's known path through
-that interval. Use `--gap-minutes 2` to change the cutoff (or `gap_minutes=2`
-in `plot_map`). This styling applies to overview and individual-leg maps;
-it does not change flight legs or add observations to the exported data.
-GeoJSON and shapefile routes contain unstyled connections between positions.
+Flight data comes from [ADS-B Exchange](https://globe.adsbexchange.com/). Consider [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/). FAA tail-number resolution uses [hangarbay](https://pypi.org/project/hangarbay/). Keep the basemap attribution in exported maps.
 
-Default is `esri-light`, a quiet gray canvas that lets the route carry the map. Other options: `osm`, `esri-street`, `esri-topo`, `esri-satellite`, `esri-natgeo`. Carto withdrew anonymous tile access, so any old `carto`/`positron` reference is mapped onto `esri-light` automatically rather than silently failing.
-
-```bash
-flight-tracer trace --icao a40442 --background esri-satellite
-```
-
-### OpenStreetMap
-
-`--background osm` identifies tile requests as FlightTracer and caches tiles
-across runs. It requests only tiles for the map being rendered, sequentially,
-and stops on denied or throttled requests. Failed responses and recognizable
-OSM access-blocked images are rejected before drawing; the map then falls
-back to Esri Light with the correct credit.
-
-The cache follows server expiry headers, using seven days when no expiry is
-provided. Expired tiles are revalidated using ETag/Last-Modified when available.
-The default cache is `~/.cache/flight-tracer/osm-v1` (or under
-`XDG_CACHE_HOME`). Set `FLIGHT_TRACER_CACHE_DIR` to choose another location.
-Old Contextily cache entries are not reused.
-
-OSM's community service is best-effort and has a
-[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
-This option is for modest, user-requested maps, not bulk or scheduled tile
-collection. Use another provider for high-volume output.
-
-### Mapbox
-
-Set a Mapbox public access token in your environment, then select a style:
-
-```bash
-export MAPBOX_ACCESS_TOKEN="YOUR_MAPBOX_PUBLIC_ACCESS_TOKEN"
-flight-tracer trace --icao a40442 --background mapbox
-flight-tracer trace --icao a40442 --background mapbox-light --aspect-ratio 9:16
-```
-
-`mapbox` and `mapbox-streets` use Streets v12. Other options are
-`mapbox-light` (Light v11), `mapbox-dark` (Dark v11), and `mapbox-outdoors`
-(Outdoors v12). The same names work with `plot_map(background=...)` in Python.
-These use Mapbox's 512-pixel tiles at double resolution, with text attribution
-included in the footer. Tokens are read at runtime and
-Mapbox request errors do not print the token-bearing URLs.
-
-Mapbox's newer **Standard** style is not available through its
-[Static Tiles API](https://docs.mapbox.com/api/maps/static-tiles/).
-Requests use your Mapbox account's tile quota and billing. A token restricted
-to browser URLs may be rejected by this Python client. Missing tokens produce
-an error before fetching flights; tile failures fall back to Esri Light and
-credit that provider instead. `--no-plots` does not require a Mapbox token.
-
-For publishing, retain the exported attribution and follow Mapbox's
-[attribution guidance](https://docs.mapbox.com/help/dive-deeper/attribution/).
-
----
-
-## Full CLI options
-
-```
-flight-tracer trace
-  --icao HEX              ICAO hex code. Repeatable.
-  --n-number TAIL          FAA tail number, e.g. N358TV. Repeatable. Requires flight-tracer[faa].
-  --url URL                A globe.adsbexchange.com URL to parse.
-  --start / --end DATE     Historical date range (YYYY-MM-DD).
-  --date DATE              Shorthand for --start/--end on the same day.
-  --recent                 Force the recent-trace endpoint even if a date was found or given.
-  --timezone ZONE          Add local times alongside UTC: an IANA zone (e.g. America/Chicago) or
-                           'auto' to infer one from the trace's first position. Default: UTC only.
-  --output DIR             Parent directory for the run's output folder. Default: data.
-  --filter-ground          Drop ground points (default). --keep-ground to disable.
-  --background NAME        Basemap. Default: esri-light.
-  --formats LIST           Comma list: csv,geojson,shp. Default: csv,geojson.
-  --no-plots               Skip map/chart rendering; write data only.
-  --aspect-ratio RATIO     16:9 (default) or 9:16, for all maps and charts.
-  --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
-  --bucket NAME            Upload the output folder to this S3 bucket.
-  --aws-profile NAME       AWS profile for --bucket uploads.
-
-flight-tracer resolve --n-number TAIL
-  Print the ICAO hex, aircraft type and registered owner for a tail number.
-```
-
-## Using FlightTracer in Python
-
-```python
-from flight_tracer import FlightTracer
-from flight_tracer.viz import plot_map, plot_series
-
-tracer = FlightTracer(aircraft_ids=["a40442"])
-raw_df = tracer.get_traces(recent=True)                  # or (start_date, end_date)
-
-gdf = tracer.process_flight_data(raw_df, timezone="America/Los_Angeles")
-summary = tracer.summarize(gdf)
-print(tracer.headline_for(summary))
-
-written, gdf_lines = tracer.write_outputs(gdf, "data/a40442")
-plot_map(gdf, gdf_lines, "N358TV", "Recent activity", "ADS-B Exchange",
-          "data/a40442/map.png")
-plot_series(gdf, "altitude", "Altitude", "Feet", "data/a40442/altitude.png")
-```
-
-### Resolving an N-number or a URL yourself
-
-```python
-from flight_tracer import resolve_n_number, parse_adsbx_url
-
-info = resolve_n_number("N358TV")
-# {'icao': 'a40442', 'n_number': 'N358TV', 'maker': 'EUROCOPTER', 'model': 'AS 350 B2', 'owner_name': '...'}
-
-info = parse_adsbx_url("https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442")
-# {'icao': 'a40442', 'date': date(2026, 9, 16), 'time': '01:58', 'lat': None, 'lon': None, 'zoom': None}
-```
-
-### Fleets: several aircraft in one call
-
-```python
-tracer = FlightTracer(aircraft_ids=["a40442", "ac308f", "ae4af6"])
-# or from a hosted list:
-tracer = FlightTracer(meta_url="https://stilesdata.com/lapd-helicopters/lapd_aircraft.json")
-
-raw_df = tracer.get_traces(recent=True)
-gdf = tracer.process_flight_data(raw_df)
-for icao in gdf["icao"].unique():
-    print(tracer.headline_for(tracer.summarize(gdf[gdf["icao"] == icao])))
-```
-
-### AWS S3
-
-```python
-tracer.upload_directory_to_s3("data/a40442_2026-09-16_2026-09-16", "my-bucket", prefix="flight_tracer")
-```
-
-Or from the CLI: `flight-tracer trace --icao a40442 --bucket my-bucket --aws-profile my-profile`.
-
----
-
-## Notes on the data
-
-- Values such as altitude and ground speed are raw and uncorrected.
-- `has_multilaterated_positions` in the summary flags when part of a track came from multilateration rather than a direct ADS-B position — expect noisier speed readings in those stretches.
-- ADS-B datetimes are UTC (Zulu); every output also carries the requested local zone, so nothing needs a manual conversion downstream.
-
----
-
-## Roadmap
-
-- Metadata enrichment beyond the FAA registry (e.g. ICAO aircraft-type lookups)
-- Parallel fetching for large fleets
-- Custom Mapbox Studio styles for house-style maps
-- Overflight/noise-style analysis helpers
-
----
-
-## Releasing
-
-See [PUBLISH.md](PUBLISH.md) and [CHANGELOG.md](CHANGELOG.md). In short: `./publish.sh`.
-
----
-
-## Credits
-
-Thanks to [ADS-B Exchange](https://globe.adsbexchange.com/) for providing open flight data. Consider [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/).
-
-N-number resolution uses [hangarbay](https://pypi.org/project/hangarbay/), an FAA aircraft registry client.
-
-## License
-
-This project is licensed under the **Creative Commons CC0 1.0 Universal** Public Domain Dedication.
-
-[![CC0 Badge](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/legalcode)
+FlightTracer is released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode).
