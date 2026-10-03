@@ -202,7 +202,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.command()
 @click.option("--icao", multiple=True, help="ICAO hex code of the aircraft. Repeatable.")
 @click.option("--n-number", multiple=True, help="FAA tail number (e.g. N358TV). Resolved via hangarbay. Repeatable.")
-@click.option("--url", default=None, help="A globe.adsbexchange.com URL to parse for the ICAO hex and replay date.")
+@click.option("--url", default=None, help="A globe.adsbexchange.com URL to parse for the ICAO hex and replay or showTrace date.")
 @click.option("--start", type=click.DateTime(formats=["%Y-%m-%d"]), help="Start date (YYYY-MM-DD).")
 @click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD).")
 @click.option("--date", type=click.DateTime(formats=["%Y-%m-%d"]), help="Shorthand for --start/--end on the same day.")

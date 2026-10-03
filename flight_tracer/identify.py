@@ -15,7 +15,7 @@ ICAO_RE = re.compile(r"^~?[0-9a-fA-F]{6}$")
 
 
 def parse_adsbx_url(url):
-    """Pull an ICAO hex and, if present, a replay date out of a globe.adsbexchange.com URL.
+    """Pull an ICAO hex and a replay or showTrace date from an ADS-B Exchange URL.
 
     Handles links like:
         https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442&lat=34.251&lon=-118.614&zoom=7.0
@@ -48,6 +48,10 @@ def parse_adsbx_url(url):
         if match:
             result["date"] = datetime.strptime(match.group(1), "%Y-%m-%d").date()
             result["time"] = match.group(2)
+
+    show_trace = (params.get("showTrace") or [None])[0]
+    if result["date"] is None and show_trace:
+        result["date"] = datetime.strptime(show_trace, "%Y-%m-%d").date()
 
     for key in ("lat", "lon", "zoom"):
         value = (params.get(key) or [None])[0]

@@ -1,10 +1,38 @@
 import unittest
 from datetime import date
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
 from flight_tracer import FlightTracer, parse_adsbx_url
 from flight_tracer.identify import resolve_timezone
+from flight_tracer.core import TRACE_COLUMNS
+
+
+class TestFetchTraceData(unittest.TestCase):
+    def test_legacy_modern_and_mixed_rows(self):
+        legacy = [0, 34.209691, -119.087877, 1500, 100, 170.5, 0]
+        modern = [10, 34.208958, -119.087848, 1600, 110, 171, 2,
+                  600, {"flight": "TEST123"}, "adsb_icao", 1700, 640, 105, 0]
+        for rows in ([legacy], [modern], [legacy, modern], [modern + [99]]):
+            with self.subTest(widths=list(map(len, rows))):
+                response = Mock(status_code=200)
+                response.json.return_value = {"timestamp": 1579995934.843, "trace": rows}
+                tracer = FlightTracer(aircraft_ids=["a9a1ad"])
+                with patch("flight_tracer.core.requests.get", return_value=response):
+                    raw = tracer.fetch_trace_data("https://example.com/trace.json", "a9a1ad")
+                self.assertEqual(list(raw.columns[:14]), TRACE_COLUMNS)
+                self.assertEqual(raw.iloc[0]["flags"], rows[0][6])
+                self.assertEqual(raw.iloc[0]["point_time_utc"],
+                                 pd.to_datetime(1579995934.843, unit="s", utc=True)
+                                 + pd.Timedelta(seconds=rows[0][0]))
+                processed = tracer.process_flight_data(raw)
+                self.assertEqual(len(processed), len(rows))
+                if len(rows[0]) == 7:
+                    self.assertTrue(pd.isna(raw.iloc[0]["vertical_rate"]))
+                    self.assertEqual(processed.iloc[0]["call_sign"], "UNKNOWN")
+                else:
+                    self.assertEqual(processed.iloc[0]["call_sign"], "TEST123")
 
 
 class TestGenerateUrls(unittest.TestCase):
@@ -40,6 +68,18 @@ class TestGenerateUrls(unittest.TestCase):
 
 
 class TestParseAdsbxUrl(unittest.TestCase):
+    def test_show_trace_date(self):
+        result = parse_adsbx_url("https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-01-26")
+        self.assertEqual(result["date"], date(2020, 1, 26))
+
+    def test_invalid_show_trace_date(self):
+        with self.assertRaises(ValueError):
+            parse_adsbx_url("https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-02-30")
+
+    def test_replay_takes_precedence_over_show_trace(self):
+        result = parse_adsbx_url("https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-01-26&replay=2020-01-27-12:00")
+        self.assertEqual(result["date"], date(2020, 1, 27))
+
     def test_parses_icao_and_replay_date(self):
         url = "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442&lat=34.251&lon=-118.614&zoom=7.0"
         result = parse_adsbx_url(url)

@@ -68,7 +68,9 @@ flight-tracer trace --icao a40442 --start 2026-09-10 --end 2026-09-14
 flight-tracer trace --url "https://globe.adsbexchange.com/?replay=2026-09-16-01:58&icao=a40442&lat=34.251&lon=-118.614&zoom=7.0"
 ```
 
-The `icao` and `replay` date come straight out of the URL — nothing to retype. A live link with no `replay` param (just `?icao=...`) is treated as recent, same as the bare `--icao` case.
+The `icao` and `replay` or `showTrace=YYYY-MM-DD` date come straight out of the URL — nothing to retype. A live link without either date parameter (just `?icao=...`) is treated as recent, same as the bare `--icao` case.
+
+Older archives with seven-field trace records are supported; unavailable measurements and aircraft metadata remain empty. Some older archives lack leg-boundary flags, so `--leg latest` cannot separate their flights automatically.
 
 **The hex on the globe starts with `~`.**
 

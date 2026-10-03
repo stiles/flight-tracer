@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-10-03
+
 ### Fixed
 
 - Identify OSM requests as FlightTracer and persist validated tiles across
