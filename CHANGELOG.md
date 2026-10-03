@@ -11,6 +11,11 @@ declaring the API settled.
 
 ### Added
 
+- Add a `data_quality` block to `summary.json` and print its notable findings
+  after each trace: tracking gaps (count, longest, share of tracked time
+  covered), stale and multilaterated positions, missing values and metadata,
+  and whether leg boundaries came from the archive, were inferred or were
+  unavailable. Gaps use the map's `--gap-minutes` threshold.
 - Add `flight-tracer render FOLDER` to redraw maps and charts from a saved
   run's `trace.csv` with a different basemap, aspect ratio, gap threshold or
   timezone, without fetching again. Writes images only, in place or to

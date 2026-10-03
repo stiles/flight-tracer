@@ -50,6 +50,12 @@ flight-tracer resolve --n-number TAIL
 
 Historical ranges include both dates. `--date` takes precedence over `--start`/`--end`, which take precedence over the URL date. `--recent` forces the recent endpoint. If only `--start` or `--end` is supplied, that date is used for both. Dates select UTC archive files; `--timezone` changes display times, not which files are fetched.
 
+## Data quality
+
+Each run prints notable findings after the headline and records all of them under `data_quality` in `summary.json`: `gap_count`, `longest_gap_minutes`, `gap_minutes_total` and `coverage_pct` (tracked time not inside a gap); `stale_positions` and `mlat_positions` counts and percentages; `missing_values` for altitude and ground speed; `missing_metadata`; and `leg_boundaries` per aircraft (`archive_flags`, `inferred_ground_stop` or `unmarked`).
+
+Gaps follow the map's rule: consecutive points in the same aircraft and leg more than `--gap-minutes` apart. Time between legs is not a gap. Ground filtering can widen a gap, so treat coverage as a statement about the points kept, not about what the aircraft did. Metadata is reported missing only when no point has it.
+
 ## Re-rendering a saved run
 
 `flight-tracer render FOLDER` redraws maps and charts from a run's `trace.csv` without fetching again. The run must have been saved with the `csv` format. Options you leave out use the defaults, not the original run's choices, except `--timezone`, which defaults to the zone in `summary.json`. Local times are recomputed from UTC.

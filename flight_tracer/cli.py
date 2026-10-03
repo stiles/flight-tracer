@@ -10,6 +10,7 @@ from flight_tracer.core import FlightTracer
 from flight_tracer.saved import load_saved_trace, read_json
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
 from flight_tracer.window import parse_window, select_window
+from flight_tracer.quality import quality_notes
 from flight_tracer.viz import DEFAULT_GAP_MINUTES, format_time_span, plot_map, plot_series, resolve_basemap
 
 
@@ -169,7 +170,7 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
     """
     written, gdf_lines = tracer.write_outputs(gdf, output_dir, formats=tuple(formats.split(",")))
 
-    summary = tracer.summarize(gdf, timezone=resolved_timezone)
+    summary = tracer.summarize(gdf, timezone=resolved_timezone, gap_minutes=gap_minutes)
     summary_path = os.path.join(output_dir, "summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
@@ -182,6 +183,8 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
         lines = headline_text.split("\n")
         headline_text = "\n".join(f"{label_prefix if i == 0 else pad}{line}" for i, line in enumerate(lines))
     click.echo(headline_text)
+    for note in quality_notes(summary["data_quality"]):
+        click.echo(f"  - {note}")
 
     if not no_plots:
         written.update(_plot_flight(gdf, gdf_lines, summary, output_dir, background, gap_minutes, aspect_ratio))
@@ -195,7 +198,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
     per leg in its own subfolder."""
     written, gdf_lines = tracer.write_outputs(gdf, output_dir, formats=tuple(formats.split(",")))
 
-    summary = tracer.summarize(gdf, timezone=resolved_timezone)
+    summary = tracer.summarize(gdf, timezone=resolved_timezone, gap_minutes=gap_minutes)
     summary_path = os.path.join(output_dir, "summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
@@ -203,6 +206,8 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 
     click.echo("")
     click.echo(tracer.headline_for(summary))
+    for note in quality_notes(summary["data_quality"]):
+        click.echo(f"  - {note}")
 
     if not no_plots:
         written["overview"] = _plot_overview(gdf, gdf_lines, legs, summary, output_dir, background, gap_minutes, aspect_ratio)

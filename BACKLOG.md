@@ -7,9 +7,9 @@ Prioritize reliability and finding the right flight before adding more visual op
 - [x] **Time-window selection.** Implemented locally: `--after` / `--before`, explicit timezone handling, inclusive bounds and separate output folders. See the [January 26 case study](docs/examples/a9a1ad-2020-01-26.md).
 - [x] **Re-render saved data.** Implemented locally: `flight-tracer render FOLDER` redraws images from `trace.csv` with a new basemap, aspect ratio, gap threshold or timezone. Labels and titles wait on editable annotations.
 - [x] **Handle archives without leg markers more clearly.** Implemented locally: warnings and optional `--infer-legs` based on explicit ground reports. Results are labeled as estimates; airborne gaps do not become flight boundaries.
-- [ ] **Data-quality summary.** Report coverage gaps, missing metadata, stale positions and whether leg boundaries were supplied or inferred.
+- [x] **Data-quality summary.** Implemented locally: `data_quality` in `summary.json` and printed notes covering coverage gaps, stale and multilaterated positions, missing metadata and leg-boundary provenance. A quality note on the map itself is not done.
 
-The data-quality summary is the next priority. Checked items are implemented in the working tree; consult the changelog for release status.
+Callsign lookup by date needs a source investigation next. Checked items are implemented in the working tree; consult the changelog for release status.
 
 ## Soon
 

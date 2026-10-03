@@ -22,8 +22,8 @@ from shapely.ops import transform
 
 from .geometry import route_geometry
 from .osm import bounds2img as osm_bounds2img
+from .quality import DEFAULT_GAP_MINUTES
 
-DEFAULT_GAP_MINUTES = 5
 
 
 def _coverage_segments(points, gap_minutes):

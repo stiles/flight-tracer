@@ -131,6 +131,7 @@ pip install --no-deps -e .
 ## Understand the trace
 
 - **Last location means last received position**, not a confirmed landing or crash site.
+- **Check the data-quality notes.** Each run reports tracking gaps, stale and multilaterated positions, missing metadata and how leg boundaries were found; the full set is in `summary.json`.
 - **Dashed segments approximate missing coverage.** They do not establish the path flown. Exported route geometries include connections without dash styling.
 - **Legs use the archive's boundary flags.** Older archives may lack them. Opt-in `--infer-legs` uses explicit ground stops and labels its results as estimates; otherwise use a time window. Seven-field historical records are supported.
 - **Date Line crossings are handled automatically.** Maps wrap around the Pacific where appropriate; exported routes split at ±180°.

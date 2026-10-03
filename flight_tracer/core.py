@@ -23,6 +23,7 @@ import pandas as pd
 import pytz
 import requests
 from .geometry import route_geometry
+from .quality import DEFAULT_GAP_MINUTES, data_quality
 
 warnings.filterwarnings("ignore", category=UserWarning, message="Column names longer than 10 characters")
 
@@ -382,7 +383,7 @@ class FlightTracer:
 
         return written, gdf_lines
 
-    def summarize(self, gdf, timezone=DEFAULT_TIMEZONE):
+    def summarize(self, gdf, timezone=DEFAULT_TIMEZONE, gap_minutes=DEFAULT_GAP_MINUTES):
         """Build a plain dict answering: what is this, and when did it happen.
 
         `first_contact_utc`/`last_contact_utc` are always present -- UTC is
@@ -423,6 +424,7 @@ class FlightTracer:
             "has_multilaterated_positions": bool(
                 gdf["position_source"].astype(str).str.contains("mlat", case=False, na=False).any()
             ) if "position_source" in gdf else False,
+            "data_quality": data_quality(gdf, gap_minutes),
         }
 
         if "point_time_local" in gdf.columns:
