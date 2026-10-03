@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-03
+
 ## [0.2.6] - 2026-10-03
 
 ### Added
