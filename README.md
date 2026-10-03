@@ -1,8 +1,5 @@
 # FlightTracer: tracking ADS-B Exchange flights
 
-[![PyPI version](https://img.shields.io/pypi/v/flight-tracer.svg)](https://pypi.org/project/flight-tracer/)
-[![License: CC0-1.0](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/)
-
 FlightTracer turns whatever you have about an aircraft — an N-number, an ICAO hex, or a pasted [ADS-B Exchange](https://globe.adsbexchange.com/) URL — into a mapped, summarized flight trace in one command.
 
 ---
