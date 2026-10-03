@@ -70,6 +70,17 @@ flight-tracer trace --icao a40442 --date 2026-09-16 \
 
 Connections across tracking gaps longer than two minutes are dashed. The default threshold is five minutes. The default basemap is `esri-light`; [see all map styles](https://github.com/stiles/flight-tracer/blob/main/docs/maps.md), including Mapbox with your own token.
 
+### Add a headline and label locations
+
+```bash
+flight-tracer trace --icao a40442 --date 2026-09-16 \
+  --title "LAPD helicopter circles the San Fernando Valley" \
+  --label "34.2098,-118.4898,Van Nuys Airport" \
+  --label "34.2597,-118.4134,Whiteman Airport"
+```
+
+`--title` and `--dek` replace the map's generated headline and time span. Each `--label` takes latitude, longitude and text, and the map widens to include it. On multi-leg runs, the title and dek go on the overview and labels go on every map. They're saved in `annotations.json`, so `render` reuses them.
+
 ### Re-render a saved run
 
 ```bash
@@ -77,7 +88,7 @@ flight-tracer render data/a40442_2026-09-16_2026-09-16 \
   --background osm --aspect-ratio 9:16 --output variants/portrait
 ```
 
-Redraws images from the saved `trace.csv` without fetching the flight again. Data files are not rewritten.
+Redraws images from the saved `trace.csv` without fetching the flight again. Data files are not rewritten. Saved annotations carry over; pass `--title`, `--dek` or `--label` to replace them.
 
 ### Export data without charts
 
@@ -99,7 +110,8 @@ data/a40442_2026-09-16_2026-09-16/
 ├── points.geojson    # Point geometries
 ├── line.geojson      # Routes by leg
 ├── summary.json      # Aircraft metadata, times and statistics
-└── selection.json    # Time bounds, leg selection and ground-filter settings
+├── selection.json    # Time bounds, leg selection and ground-filter settings
+└── annotations.json  # Custom title, dek and location labels, reused by render
 ```
 
 For several detected legs, the root contains the full data and `overview.png`; subfolders such as `leg1_FDX9756/` contain each leg's data and charts. Interactive runs ask which leg to use; `--leg all` skips the prompt. Non-interactive runs default to all legs.

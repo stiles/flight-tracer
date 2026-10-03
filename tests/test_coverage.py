@@ -33,7 +33,7 @@ class TestCoverage(unittest.TestCase):
         segments = _coverage_segments(points, 5)
         self.assertEqual(segments.coverage_gap.tolist(), [False, True, False])
         self.assertEqual(segments.geometry.iloc[1].geom_type, "MultiLineString")
-        _, projected = _project_map_data(points, segments)
+        _, projected, _ = _project_map_data(points, segments)
         fig, ax = plt.subplots()
         try:
             _draw_coverage(ax, projected, {}, False)

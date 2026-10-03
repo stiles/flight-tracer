@@ -34,6 +34,8 @@ plot_series(
 )
 ```
 
+To mark locations, pass `labels=[{"lat": 33.9425, "lon": -118.408, "text": "LAX"}]` to `plot_map`. The extent widens to include them.
+
 `write_outputs` writes the selected data formats (CSV and GeoJSON by default). Unlike the CLI, this method does not create charts or `summary.json`; call plotting functions or serialize the summary yourself.
 
 ## Select a time window from an older archive

@@ -52,7 +52,7 @@ class TestDateLine(unittest.TestCase):
             exported = gpd.read_file(Path(tmp) / "line.geojson")
             self.assertEqual(exported.geometry.iloc[0].geom_type, "MultiLineString")
             self.assertEqual(len(exported), 1)  # the crossing is still one flight leg
-        projected, routes = _project_map_data(points, lines)
+        projected, routes, _ = _project_map_data(points, lines)
         self.assertAlmostEqual(projected.total_bounds[2] - projected.total_bounds[0],
                                WORLD_WIDTH * 30 / 360)
         for line in routes.geometry.iloc[0].geoms:
@@ -61,7 +61,7 @@ class TestDateLine(unittest.TestCase):
 
     def test_ordinary_map_coordinates_unchanged(self):
         points = self.points([-118, -117, -116])
-        projected, _ = _project_map_data(points, None)
+        projected, _, _ = _project_map_data(points, None)
         self.assertTrue(projected.geometry.equals(points.to_crs(3857).geometry))
 
     def test_tiles_wrap_and_share_zoom_without_changing_extent(self):

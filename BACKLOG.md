@@ -5,7 +5,7 @@ Prioritize reliability and finding the right flight before adding more visual op
 ## Next
 
 - [x] **Time-window selection.** Implemented locally: `--after` / `--before`, explicit timezone handling, inclusive bounds and separate output folders. See the [January 26 case study](docs/examples/a9a1ad-2020-01-26.md).
-- [x] **Re-render saved data.** Implemented locally: `flight-tracer render FOLDER` redraws images from `trace.csv` with a new basemap, aspect ratio, gap threshold or timezone. Labels and titles wait on editable annotations.
+- [x] **Re-render saved data.** Implemented locally: `flight-tracer render FOLDER` redraws images from `trace.csv` with a new basemap, aspect ratio, gap threshold or timezone. Saved titles and labels carry over unless replaced.
 - [x] **Handle archives without leg markers more clearly.** Implemented locally: warnings and optional `--infer-legs` based on explicit ground reports. Results are labeled as estimates; airborne gaps do not become flight boundaries.
 - [x] **Data-quality summary.** Implemented locally: `data_quality` in `summary.json` and printed notes covering coverage gaps, stale and multilaterated positions, missing metadata and leg-boundary provenance. A quality note on the map itself is not done.
 
@@ -15,7 +15,7 @@ Callsign lookup by date needs a source investigation next. Checked items are imp
 
 - [ ] **Callsign lookup by date.** Accept identifiers such as `FDX9756`. First investigate historical lookup sources, availability and access requirements; aircraft assignments can vary by date.
 - [ ] **OpenFreeMap support.** Explore a vector-map renderer alongside the current raster tiles, including styles such as Positron, Bright, Liberty, Dark and Fiord. Verify available styles during implementation.
-- [ ] **Editable titles and annotations.** Supply a headline, label airports and mark relevant locations without editing Python.
+- [x] **Editable titles and annotations.** Implemented locally: `--title`, `--dek` and `--label LAT,LON,TEXT` on `trace` and `render`, saved in `annotations.json`. Airport-code lookup (e.g. `--airport KLAX`) could build on this later.
 - [ ] **Saved output presets.** Reuse preferred aspect ratios, timezones, basemaps and output directories.
 
 ## Later

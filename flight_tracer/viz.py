@@ -18,6 +18,8 @@ import pandas as pd
 import geopandas as gpd
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
+from matplotlib import patheffects
+from shapely.geometry import Point
 from shapely.ops import transform
 
 from .geometry import route_geometry
@@ -69,11 +71,15 @@ def _draw_coverage(ax, routes, colors, multi_leg):
 WORLD_WIDTH = 2 * math.pi * 6378137
 
 
-def _project_map_data(points, lines):
-    """Use the shortest longitude window, shared by all routes and markers."""
+def _project_map_data(points, lines, marks=None):
+    """Use the shortest longitude window, shared by all routes, markers and labels."""
     projected = points.to_crs(epsg=3857)
     routes = lines.to_crs(epsg=3857) if lines is not None and not lines.empty else None
-    xs = np.sort(projected.geometry.x.unique())
+    marks = marks.to_crs(epsg=3857) if marks is not None and not marks.empty else None
+    xs = projected.geometry.x
+    if marks is not None:
+        xs = pd.concat([xs, marks.geometry.x])
+    xs = np.sort(xs.unique())
     if len(xs) > 1:
         gaps = np.diff(np.append(xs, xs[0] + WORLD_WIDTH))
         gap_index = int(np.argmax(gaps))
@@ -87,7 +93,9 @@ def _project_map_data(points, lines):
             projected.geometry = projected.geometry.apply(lambda geom: transform(wrap, geom))
             if routes is not None:
                 routes.geometry = routes.geometry.apply(lambda geom: transform(wrap, geom))
-    return projected, routes
+            if marks is not None:
+                marks.geometry = marks.geometry.apply(lambda geom: transform(wrap, geom))
+    return projected, routes, marks
 
 
 def _draw_basemap(ax, provider, zoom=None):
@@ -389,7 +397,8 @@ def _add_basemap(ax, background, zoom=None):
 
 def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
              background=DEFAULT_BASEMAP, figsize=None, pad_factor=0.25, zoom=None,
-             leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9"):
+             leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9",
+             labels=None):
     """Plot a flight trace: route, contact markers, basemap and CNN-style chrome.
 
     `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
@@ -405,13 +414,21 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
 
     Connections separated by more than `gap_minutes` are dashed to mark
     missing coverage, not an observed path. This does not split flight legs.
+
+    `labels`: optional list of {"lat", "lon", "text"} dicts -- airports or
+    other locations to mark. The map extent grows to include them. They
+    label themselves, so they stay out of the legend.
     """
     if gdf_points.crs is None:
         gdf_points = gdf_points.set_crs(epsg=4326)
     has_times = "point_time_utc" in gdf_points
     if has_times:
         gdf_lines = _coverage_segments(gdf_points, gap_minutes)
-    points_3857, lines_3857 = _project_map_data(gdf_points, gdf_lines)
+    marks = gpd.GeoDataFrame(
+        {"text": [label["text"] for label in labels]},
+        geometry=[Point(label["lon"], label["lat"]) for label in labels], crs=4326,
+    ) if labels else None
+    points_3857, lines_3857, marks_3857 = _project_map_data(gdf_points, gdf_lines, marks)
     has_gaps = has_times and lines_3857 is not None and lines_3857["coverage_gap"].any()
 
     figsize = _figure_size(figsize, aspect_ratio)
@@ -473,6 +490,9 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     ax.set_position([left, bottom, right - left, top - bottom])
 
     xmin, ymin, xmax, ymax = points_3857.total_bounds
+    if marks_3857 is not None:
+        mxmin, mymin, mxmax, mymax = marks_3857.total_bounds
+        xmin, ymin, xmax, ymax = min(xmin, mxmin), min(ymin, mymin), max(xmax, mxmax), max(ymax, mymax)
     x_pad = max((xmax - xmin) * pad_factor, 500)
     y_pad = max((ymax - ymin) * pad_factor, 500)
     data_w = (xmax - xmin) + 2 * x_pad
@@ -505,10 +525,26 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     ax.set_ylim(ymin - y_pad, ymax + y_pad)
 
     ax.set_axis_off()
+    if marks_3857 is not None:
+        _draw_labels(ax, marks_3857)
 
     footer.set_text(_wrap_text(fig, _map_source_text(source, credit), 0.95, 8))
 
     _save(fig, output_path, tight=False)
+
+
+def _draw_labels(ax, marks):
+    """Hollow location markers with haloed text, flipped left near the right edge."""
+    west, east = ax.get_xlim()
+    halo = [patheffects.withStroke(linewidth=3, foreground="white")]
+    for row in marks.itertuples():
+        x, y = row.geometry.x, row.geometry.y
+        ax.scatter([x], [y], s=20, facecolor="white", edgecolor=COLOR_TEXT,
+                   linewidth=1.2, zorder=6)
+        flip = x > west + 0.75 * (east - west)
+        ax.annotate(row.text, (x, y), textcoords="offset points", xytext=(-6 if flip else 6, 0),
+                    ha="right" if flip else "left", va="center", fontsize=9,
+                    color=COLOR_TEXT, path_effects=halo, zorder=6)
 
 
 def plot_series(df, value_col, title, ylabel, output_path, source="",

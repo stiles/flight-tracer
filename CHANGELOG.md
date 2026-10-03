@@ -9,6 +9,20 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Add `--title`, `--dek` and repeatable `--label "LAT,LON,Text"` to `trace`
+  and `render`. Title and dek replace the generated map headline and time
+  span (on the overview for multi-leg runs); labels mark airports or other
+  locations on every map, and the extent widens to include them. Runs save
+  them in `annotations.json`, which `render` reuses unless overridden.
+  `plot_map` takes a matching `labels` argument.
+
+### Removed
+
+- Remove the legacy `fetch_example.py` and `fetch_from_json.py` scripts and
+  the 2025 `visuals/` images; `docs/python.md` covers both examples.
+
 ## [0.3.0] - 2026-10-03
 
 ### Added

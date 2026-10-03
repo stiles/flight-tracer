@@ -34,6 +34,9 @@ flight-tracer trace
   --no-plots               Skip map/chart rendering; write data only.
   --aspect-ratio RATIO     16:9 (default) or 9:16, for all maps and charts.
   --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
+  --title TEXT             Map headline, replacing the generated one.
+  --dek TEXT               Map subheading, replacing the generated time span.
+  --label LAT,LON,TEXT     Mark a location, e.g. "33.9425,-118.408,LAX". Repeatable.
   --bucket NAME            Upload the output folder to this S3 bucket.
   --aws-profile NAME       AWS profile for --bucket uploads.
 
@@ -43,6 +46,7 @@ flight-tracer render FOLDER
   --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
   --timezone ZONE          IANA zone, 'auto' or 'utc'. Default: the zone the run was saved with.
   --output DIR             Write images here instead of replacing the run's own.
+  --title / --dek / --label  As for trace. Default: the run's saved annotations.
 
 flight-tracer resolve --n-number TAIL
   Print the ICAO hex, aircraft type and registered owner for a tail number.
@@ -58,9 +62,17 @@ Gaps follow the map's rule: consecutive points in the same aircraft and leg more
 
 ## Re-rendering a saved run
 
-`flight-tracer render FOLDER` redraws maps and charts from a run's `trace.csv` without fetching again. The run must have been saved with the `csv` format. Options you leave out use the defaults, not the original run's choices, except `--timezone`, which defaults to the zone in `summary.json`. Local times are recomputed from UTC.
+`flight-tracer render FOLDER` redraws maps and charts from a run's `trace.csv` without fetching again. The run must have been saved with the `csv` format. Options you leave out use the defaults, not the original run's choices, except `--timezone`, which defaults to the zone in `summary.json`, and the title, dek and labels, which default to `annotations.json`. Local times are recomputed from UTC.
 
 Only images are written: `map.png`, `altitude.png` and `speed.png`, plus `overview.png` and per-leg subfolders when the CSV holds several legs. Data files are never rewritten, so `summary.json` keeps its original timezone. Without `--output`, existing images are replaced. A run that was narrowed to one leg re-renders as that leg. Folders saved before `leg_detection` was recorded render normally, with leg detection shown as unknown.
+
+## Titles and labels
+
+`--title` and `--dek` replace the map's generated headline and time span. Altitude and speed charts keep their own titles. When legs were inferred, the map still notes that. On multi-leg runs the title and dek apply to `overview.png` only, and each leg map keeps its generated headline so the legs stay distinguishable.
+
+`--label` takes `LAT,LON,TEXT`; anything after the second comma is text, so it may contain commas. Labels appear on every map, including each leg map, and the extent widens to include them. Text flips to the left of its marker near the map's right edge. Labels are not added to the legend.
+
+Each `trace` run writes `annotations.json`, even when it's empty, so rerunning a selection clears earlier annotations. `render` reads it: any `--title` or `--dek` replaces the saved value, and any `--label` replaces all saved labels. `render` never rewrites `annotations.json`, so overrides apply only to that render.
 
 ## Time windows
 
