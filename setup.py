@@ -39,6 +39,7 @@ setup(
         "boto3",
         "matplotlib",
         "contextily",
+        "mercantile",
         "xyzservices",
         "shapely",
         "click",

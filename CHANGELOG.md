@@ -9,6 +9,13 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Fixed
+
+- Identify OSM requests as FlightTracer and persist validated tiles across
+  runs, with expiry and conditional revalidation. Reject denied responses
+  and recognizable access-blocked images before drawing, then fall back to
+  Esri Light. Limit requests to the visible map and fetch sequentially.
+
 ## [0.2.7] - 2026-10-03
 
 ## [0.2.6] - 2026-10-03

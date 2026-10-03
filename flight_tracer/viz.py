@@ -21,6 +21,7 @@ from matplotlib.lines import Line2D
 from shapely.ops import transform
 
 from .geometry import route_geometry
+from .osm import bounds2img as osm_bounds2img
 
 DEFAULT_GAP_MINUTES = 5
 
@@ -94,7 +95,14 @@ def _draw_basemap(ax, provider, zoom=None):
     west, east = ax.get_xlim()
     south, north = ax.get_ylim()
     half = WORLD_WIDTH / 2
+    is_osm = provider.get("name") == "OpenStreetMap.Mapnik"
     if -half <= west < east <= half:
+        if is_osm:
+            raster, extent = osm_bounds2img(west, max(south, -half), east, min(north, half), zoom=zoom)
+            ax.imshow(raster, extent=extent, interpolation="bilinear", zorder=0)
+            ax.set_xlim(west, east)
+            ax.set_ylim(south, north)
+            return
         # Render the provider's full credit once in our wrapped footer.
         kwargs = {"source": provider, "reset_extent": True, "attribution": False}
         if zoom is not None:
@@ -114,7 +122,10 @@ def _draw_basemap(ax, provider, zoom=None):
         s, n = max(south, -half), min(north, half)
         if w >= e or s >= n:
             continue
-        raster, extent = ctx.bounds2img(w, s, e, n, zoom=zoom, source=provider)
+        if is_osm:
+            raster, extent = osm_bounds2img(w, s, e, n, zoom=zoom)
+        else:
+            raster, extent = ctx.bounds2img(w, s, e, n, zoom=zoom, source=provider)
         images.append((raster, (extent[0] + shift, extent[1] + shift, extent[2], extent[3])))
     for raster, extent in images:
         ax.imshow(raster, extent=extent, interpolation="bilinear", zorder=0)
@@ -135,7 +146,7 @@ COLOR_FLIGHT = "#5194C3"
 # and it's the one combination red-green colorblind readers can't tell
 # apart). First contact is muted -- it's context. Last contact is the point
 # that usually matters most in a breaking-news read, so it gets the bolder
-# color; shape (circle vs. square) carries the rest of the distinction.
+# color. Both endpoints use small circles, matching the footer key.
 COLOR_FIRST_CONTACT = "#262626"
 COLOR_LAST_CONTACT = "#F18851"
 

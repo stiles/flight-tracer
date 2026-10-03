@@ -203,6 +203,25 @@ Default is `esri-light`, a quiet gray canvas that lets the route carry the map. 
 flight-tracer trace --icao a40442 --background esri-satellite
 ```
 
+### OpenStreetMap
+
+`--background osm` identifies tile requests as FlightTracer and caches tiles
+across runs. It requests only tiles for the map being rendered, sequentially,
+and stops on denied or throttled requests. Failed responses and recognizable
+OSM access-blocked images are rejected before drawing; the map then falls
+back to Esri Light with the correct credit.
+
+The cache follows server expiry headers, using seven days when no expiry is
+provided. Expired tiles are revalidated using ETag/Last-Modified when available.
+The default cache is `~/.cache/flight-tracer/osm-v1` (or under
+`XDG_CACHE_HOME`). Set `FLIGHT_TRACER_CACHE_DIR` to choose another location.
+Old Contextily cache entries are not reused.
+
+OSM's community service is best-effort and has a
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+This option is for modest, user-requested maps, not bulk or scheduled tile
+collection. Use another provider for high-volume output.
+
 ### Mapbox
 
 Set a Mapbox public access token in your environment, then select a style:
