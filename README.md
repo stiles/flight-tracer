@@ -15,7 +15,7 @@ No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
      to expire before anyone sees the new one. Whenever you replace
      flight-map.png, update this SHA to the new commit:
      git log -1 --format=%H -- docs/images/flight-map.png -->
-![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/b23ad55444dc0224e55806bc071185b5bc07c215/docs/images/flight-map.png)
+![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/refs/heads/main/docs/images/flight-map.png)
 
 *Example: An LAPD helicopter, N224LA, patrolling on an early Saturday morning.*
 
