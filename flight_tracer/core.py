@@ -22,7 +22,7 @@ import geopandas as gpd
 import pandas as pd
 import pytz
 import requests
-from shapely.geometry import LineString
+from .geometry import route_geometry
 
 warnings.filterwarnings("ignore", category=UserWarning, message="Column names longer than 10 characters")
 
@@ -268,7 +268,7 @@ class FlightTracer:
         ).set_crs(epsg=4326)
 
     def create_linestrings(self, gdf, flight_leg_column="flight_leg", point_time_column="point_time_utc"):
-        """Collapse a points GeoDataFrame into one LineString per flight leg."""
+        """One route per leg; Date Line crossings use a MultiLineString."""
         if gdf.empty:
             return gpd.GeoDataFrame()
 
@@ -276,7 +276,7 @@ class FlightTracer:
         for flight_leg, group in gdf.groupby(flight_leg_column):
             group = group.sort_values(point_time_column)
             points = list(group.geometry)
-            geometry = LineString(points) if len(points) > 1 else points[0]
+            geometry = route_geometry(points)
 
             legs.append({
                 flight_leg_column: flight_leg,

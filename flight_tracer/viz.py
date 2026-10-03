@@ -9,6 +9,113 @@ equivalents rather than left to fail silently.
 import contextily as ctx
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import math
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
+from shapely.ops import transform
+
+from .geometry import route_geometry
+
+DEFAULT_GAP_MINUTES = 5
+
+
+def _coverage_segments(points, gap_minutes):
+    """Classify connections by elapsed time, never connecting separate legs."""
+    if not math.isfinite(gap_minutes) or gap_minutes <= 0:
+        raise ValueError("gap_minutes must be a positive, finite number")
+    points = points.to_crs(4326).copy()
+    points["point_time_utc"] = pd.to_datetime(points["point_time_utc"], utc=True)
+    keys = [key for key in ("icao", "leg_id") if key in points]
+    if "leg_id" not in keys and "flight_leg" in points:
+        keys.append("flight_leg")
+    groups = points.groupby(keys, dropna=False) if keys else [(None, points)]
+    rows = []
+    for _, group in groups:
+        ordered = group.sort_values("point_time_utc")
+        records = list(ordered.itertuples())
+        for previous, current in zip(records, records[1:]):
+            elapsed = (current.point_time_utc - previous.point_time_utc).total_seconds()
+            rows.append({
+                "flight_leg": getattr(current, "flight_leg", None),
+                "coverage_gap": not math.isfinite(elapsed) or elapsed > gap_minutes * 60,
+                "geometry": route_geometry([previous.geometry, current.geometry]),
+            })
+    return gpd.GeoDataFrame(rows, columns=["flight_leg", "coverage_gap", "geometry"], crs=4326)
+
+
+def _draw_coverage(ax, routes, colors, multi_leg):
+    """Draw each observed connection or gap with its own line style."""
+    segments, segment_colors, styles = [], [], []
+    for row in routes.itertuples():
+        geometry = row.geometry
+        parts = geometry.geoms if geometry.geom_type == "MultiLineString" else [geometry]
+        for part in parts:
+            if part.geom_type != "LineString":
+                continue
+            segments.append(list(part.coords))
+            segment_colors.append(colors.get(row.flight_leg, COLOR_FLIGHT) if multi_leg else COLOR_FLIGHT)
+            styles.append((0, (4, 3)) if row.coverage_gap else "solid")
+    ax.add_collection(LineCollection(segments, colors=segment_colors, linestyles=styles,
+                                     linewidths=2.2, zorder=3))
+
+# Web Mercator repeats horizontally every circumference of the Earth.
+WORLD_WIDTH = 2 * math.pi * 6378137
+
+
+def _project_map_data(points, lines):
+    """Use the shortest longitude window, shared by all routes and markers."""
+    projected = points.to_crs(epsg=3857)
+    routes = lines.to_crs(epsg=3857) if lines is not None and not lines.empty else None
+    xs = np.sort(projected.geometry.x.unique())
+    if len(xs) > 1:
+        gaps = np.diff(np.append(xs, xs[0] + WORLD_WIDTH))
+        gap_index = int(np.argmax(gaps))
+        if gap_index != len(xs) - 1:
+            left = xs[gap_index + 1]
+
+            def wrap(x, y, z=None):
+                x = np.asarray(x)
+                return np.where(x < left - 1e-6, x + WORLD_WIDTH, x), y
+
+            projected.geometry = projected.geometry.apply(lambda geom: transform(wrap, geom))
+            if routes is not None:
+                routes.geometry = routes.geometry.apply(lambda geom: transform(wrap, geom))
+    return projected, routes
+
+
+def _draw_basemap(ax, provider, zoom=None):
+    """Fetch each visible world strip in tile coordinates, then shift it back."""
+    west, east = ax.get_xlim()
+    south, north = ax.get_ylim()
+    half = WORLD_WIDTH / 2
+    if -half <= west < east <= half:
+        kwargs = {"source": provider, "reset_extent": False}
+        if zoom is not None:
+            kwargs["zoom"] = zoom
+        ctx.add_basemap(ax, **kwargs)
+        return
+
+    # Use one zoom for both halves so their tile detail matches at the seam.
+    if zoom is None:
+        zoom = max(0, math.ceil(math.log2(2 * WORLD_WIDTH / (east - west))))
+        zoom = max(provider.get("min_zoom", 0), min(zoom, provider.get("max_zoom", 19)))
+    images = []
+    for world in range(math.floor((west + half) / WORLD_WIDTH),
+                       math.ceil((east + half) / WORLD_WIDTH)):
+        shift = world * WORLD_WIDTH
+        w, e = max(west - shift, -half), min(east - shift, half)
+        s, n = max(south, -half), min(north, half)
+        if w >= e or s >= n:
+            continue
+        raster, extent = ctx.bounds2img(w, s, e, n, zoom=zoom, source=provider)
+        images.append((raster, (extent[0] + shift, extent[1] + shift, extent[2], extent[3])))
+    for raster, extent in images:
+        ax.imshow(raster, extent=extent, interpolation="bilinear", zorder=0)
+    ax.set_xlim(west, east)
+    ax.set_ylim(south, north)
 
 COLOR_TEXT = "#262626"
 COLOR_MUTED = "#8e8e8e"
@@ -105,16 +212,13 @@ def _add_basemap(ax, background, zoom=None):
     """Draw the basemap, retrying with the default provider if the first fails."""
     provider, credit = resolve_basemap(background)
     try:
-        kwargs = {"source": provider, "reset_extent": False}
-        if zoom is not None:
-            kwargs["zoom"] = zoom
-        ctx.add_basemap(ax, **kwargs)
+        _draw_basemap(ax, provider, zoom)
         return credit
     except Exception as exc:
         print(f"Could not load the {credit} basemap ({exc}); falling back to '{DEFAULT_BASEMAP}'.")
         fallback_provider, fallback_credit = resolve_basemap(DEFAULT_BASEMAP)
         try:
-            ctx.add_basemap(ax, source=fallback_provider, reset_extent=False)
+            _draw_basemap(ax, fallback_provider, zoom)
             return fallback_credit
         except Exception as exc2:
             print(f"Fallback basemap failed too ({exc2}); drawing the route with no basemap.")
@@ -123,7 +227,7 @@ def _add_basemap(ax, background, zoom=None):
 
 def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
              background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None,
-             leg_labels=None):
+             leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES):
     """Plot a flight trace: route, contact markers, basemap and CNN-style chrome.
 
     `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
@@ -137,11 +241,17 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     markers -- with several distinct flights on one map, one global
     start/end pair says less than which line is which flight. Each leg gets
     a small dot at its own start instead, colored to match its line.
+
+    Connections separated by more than `gap_minutes` are dashed to mark
+    missing coverage, not an observed path. This does not split flight legs.
     """
     if gdf_points.crs is None:
         gdf_points = gdf_points.set_crs(epsg=4326)
-    points_3857 = gdf_points.to_crs(epsg=3857)
-    lines_3857 = gdf_lines.to_crs(epsg=3857) if gdf_lines is not None and not gdf_lines.empty else None
+    has_times = "point_time_utc" in gdf_points
+    if has_times:
+        gdf_lines = _coverage_segments(gdf_points, gap_minutes)
+    points_3857, lines_3857 = _project_map_data(gdf_points, gdf_lines)
+    has_gaps = has_times and lines_3857 is not None and lines_3857["coverage_gap"].any()
 
     fig = plt.figure(figsize=figsize)
 
@@ -157,7 +267,9 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     multi_leg = len(legs) > 1
     colors = {leg: CATEGORY_COLORS[i % len(CATEGORY_COLORS)] for i, leg in enumerate(legs)}
 
-    if lines_3857 is not None:
+    if lines_3857 is not None and has_times:
+        _draw_coverage(ax, lines_3857, colors, multi_leg)
+    elif lines_3857 is not None:
         for _, row in lines_3857.iterrows():
             color = colors.get(row.get("flight_leg"), COLOR_FLIGHT) if multi_leg else COLOR_FLIGHT
             gpd_series = lines_3857[lines_3857["flight_leg"] == row["flight_leg"]] if multi_leg else lines_3857
@@ -218,7 +330,12 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     credit = _add_basemap(ax, background, zoom=zoom)
 
     ax.set_axis_off()
-    ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, facecolor="white", framealpha=0.85)
+    handles, labels = ax.get_legend_handles_labels()
+    if has_gaps:
+        handles.append(Line2D([], [], color=COLOR_MUTED, linewidth=2.2, linestyle=(0, (4, 3))))
+        labels.append("Tracking gap (approximate connection)")
+    ax.legend(handles, labels, loc="lower right", fontsize=legend_fontsize,
+              frameon=True, facecolor="white", framealpha=0.85)
 
     fig.text(0.02, 0.97, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
     if dek:

@@ -7,7 +7,7 @@ import click
 
 from flight_tracer.core import FlightTracer
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
-from flight_tracer.viz import plot_map, plot_series
+from flight_tracer.viz import DEFAULT_GAP_MINUTES, plot_map, plot_series
 
 
 @click.group()
@@ -100,7 +100,7 @@ def _sanitize_for_path(value):
     return safe or "unknown"
 
 
-def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, label_prefix=""):
+def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, label_prefix="", gap_minutes=DEFAULT_GAP_MINUTES):
     """Write data + summary + map/charts for one gdf (a whole trace, or one leg of it).
 
     The single unit of rendering, reused for a plain single-leg trace and
@@ -140,7 +140,7 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
         chart_source = f"Source: ADS-B Exchange{multilaterated_note}"
 
         map_path = os.path.join(output_dir, "map.png")
-        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background)
+        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background, gap_minutes=gap_minutes)
         written["map"] = map_path
 
         alt_path = os.path.join(output_dir, "altitude.png")
@@ -154,7 +154,7 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
     return written
 
 
-def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots):
+def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=DEFAULT_GAP_MINUTES):
     """Multi-leg case: full data + a global summary at the root, an overview
     map with a proper per-leg legend, and one full single-leg-shaped render
     per leg in its own subfolder."""
@@ -183,7 +183,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
             source="ADS-B Exchange",
             output_path=overview_path,
             background=background,
-            leg_labels=leg_labels,
+            leg_labels=leg_labels, gap_minutes=gap_minutes,
         )
         written["overview"] = overview_path
 
@@ -194,7 +194,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
         leg_dir = os.path.join(output_dir, f"leg{leg_id}_{_sanitize_for_path(leg['call_sign'])}")
         leg_written = _render_flight(
             tracer, leg_gdf, leg_dir, resolved_timezone, background, formats, no_plots,
-            label_prefix=f"Leg {leg_id}: ",
+            label_prefix=f"Leg {leg_id}: ", gap_minutes=gap_minutes,
         )
         written.update({f"leg{leg_id}_{k}": v for k, v in leg_written.items()})
 
@@ -220,11 +220,14 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.option("--background", default="esri-light", show_default=True,
               help="Basemap: osm, esri-light, esri-street, esri-topo, esri-satellite, esri-natgeo.")
 @click.option("--formats", default="csv,geojson", show_default=True, help="Comma list of output formats: csv,geojson,shp.")
+@click.option("--gap-minutes", type=click.FloatRange(min=0, min_open=True),
+              default=DEFAULT_GAP_MINUTES, show_default=True,
+              help="Dash map connections across tracking gaps longer than this many minutes.")
 @click.option("--no-plots", is_flag=True, help="Skip map and chart rendering; write data only.")
 @click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
 @click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
 def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
-          filter_ground, background, formats, no_plots, bucket, aws_profile):
+          filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes):
     """Fetch, process, map and summarize a flight trace in one step.
 
     Pick the entry point that matches what you have:
@@ -287,12 +290,12 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
     leg_choice = _resolve_leg_choice(legs, leg)
 
     if leg_choice == "all" and len(legs) > 1:
-        written = _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots)
+        written = _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes)
     else:
         if leg_choice != "all":
             click.echo(f"Rendering leg {leg_choice} only ({len(legs)} legs total in this window).")
             gdf = gdf[gdf["leg_id"] == leg_choice].reset_index(drop=True)
-        written = _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots)
+        written = _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes)
 
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")
 

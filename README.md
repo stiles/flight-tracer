@@ -86,7 +86,7 @@ Expect a thinner summary than a normal ADS-B contact: no registration, aircraft 
 data/a40442_2026-09-16_2026-09-16/
 ├── trace.csv        # every point: time (UTC + local), lat/lon, altitude, speed, leg
 ├── points.geojson
-├── line.geojson      # one LineString per flight leg
+├── line.geojson      # one route per leg; MultiLineString at Date Line crossings
 ├── map.png           # route over a basemap, start/end markers, headline + dek
 ├── altitude.png      # altitude over time
 ├── speed.png         # ground speed over time
@@ -163,6 +163,19 @@ flight-tracer trace --icao a6f3d3 --leg all     # every leg, explicitly
 
 ### Basemaps
 
+Routes crossing the International Date Line stay together on the map, with
+basemap tiles wrapped across the seam. Exported routes split at ±180° into
+a MultiLineString so GIS tools do not draw a line across the world. These
+splits do not change flight legs, timestamps, or recorded positions.
+
+Missing tracking coverage is shown separately: map connections between
+positions more than five minutes apart are dashed and labeled as approximate
+connections in the legend. They do not show the aircraft's known path through
+that interval. Use `--gap-minutes 2` to change the cutoff (or `gap_minutes=2`
+in `plot_map`). This styling applies to overview and individual-leg maps;
+it does not change flight legs or add observations to the exported data.
+GeoJSON and shapefile routes contain unstyled connections between positions.
+
 Default is `esri-light`, a quiet gray canvas that lets the route carry the map. Other options: `osm`, `esri-street`, `esri-topo`, `esri-satellite`, `esri-natgeo`. Carto withdrew anonymous tile access, so any old `carto`/`positron` reference is mapped onto `esri-light` automatically rather than silently failing.
 
 ```bash
@@ -188,6 +201,7 @@ flight-tracer trace
   --background NAME        Basemap. Default: esri-light.
   --formats LIST           Comma list: csv,geojson,shp. Default: csv,geojson.
   --no-plots               Skip map/chart rendering; write data only.
+  --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
   --bucket NAME            Upload the output folder to this S3 bucket.
   --aws-profile NAME       AWS profile for --bucket uploads.
 
