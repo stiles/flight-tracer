@@ -11,7 +11,7 @@ No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
 
 ![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/main/docs/images/flight-map.png)
 
-*Example output: a Los Angeles helicopter trace using OpenStreetMap. Maps and charts default to 1920 × 1080.*
+*Example: An LAPD helicopter, N224LA, on Friday night patrol.*
 
 ## Start with what you have
 
