@@ -70,6 +70,15 @@ flight-tracer trace --icao a40442 --date 2026-09-16 \
 
 Connections across tracking gaps longer than two minutes are dashed. The default threshold is five minutes. The default basemap is `esri-light`; [see all map styles](https://github.com/stiles/flight-tracer/blob/main/docs/maps.md), including Mapbox with your own token.
 
+### Re-render a saved run
+
+```bash
+flight-tracer render data/a40442_2026-09-16_2026-09-16 \
+  --background osm --aspect-ratio 9:16 --output variants/portrait
+```
+
+Redraws images from the saved `trace.csv` without fetching the flight again. Data files are not rewritten.
+
 ### Export data without charts
 
 ```bash

@@ -7,6 +7,7 @@ import click
 
 from flight_tracer import __version__
 from flight_tracer.core import FlightTracer
+from flight_tracer.saved import load_saved_trace, read_json
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
 from flight_tracer.window import parse_window, select_window
 from flight_tracer.viz import DEFAULT_GAP_MINUTES, format_time_span, plot_map, plot_series, resolve_basemap
@@ -103,6 +104,62 @@ def _sanitize_for_path(value):
     return safe or "unknown"
 
 
+def _plot_flight(gdf, gdf_lines, summary, output_dir, background, gap_minutes, aspect_ratio):
+    """Draw map + altitude and speed charts for one gdf; return {kind: path}."""
+    os.makedirs(output_dir, exist_ok=True)
+    written = {}
+    label = summary.get("registration") or summary.get("icao", "").upper()
+    aircraft = summary.get("description") or summary.get("aircraft_type") or ""
+    headline = f"{label} \u2014 {aircraft}" if aircraft else label
+    dek = format_time_span(gdf)
+    if "leg_detection" in gdf and (gdf["leg_detection"] == "inferred_ground_stop").any():
+        dek += "\nLeg boundaries inferred from ground reports"
+    multilaterated_note = " \u2014 some positions are multilaterated estimates" if summary.get("has_multilaterated_positions") else ""
+    # plot_map credits the basemap tiles on its own, so it gets the bare
+    # data-source label; the charts have no basemap, so they get a
+    # complete "Source:" line.
+    flight_source_label = f"ADS-B Exchange{multilaterated_note}"
+    chart_source = f"Source: ADS-B Exchange{multilaterated_note}"
+
+    map_path = os.path.join(output_dir, "map.png")
+    plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
+    written["map"] = map_path
+
+    alt_path = os.path.join(output_dir, "altitude.png")
+    plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=chart_source, aspect_ratio=aspect_ratio)
+    written["altitude_chart"] = alt_path
+
+    speed_path = os.path.join(output_dir, "speed.png")
+    plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=chart_source, aspect_ratio=aspect_ratio)
+    written["speed_chart"] = speed_path
+    return written
+
+
+def _plot_overview(gdf, gdf_lines, legs, summary, output_dir, background, gap_minutes, aspect_ratio):
+    """Draw the multi-leg overview map; return its path."""
+    os.makedirs(output_dir, exist_ok=True)
+    leg_labels = {
+        row["flight_leg"]: f"{row['call_sign']} \u2013 {row['start_time_utc'].strftime('%b %d, %H:%M')} UTC"
+        for _, row in gdf_lines.iterrows()
+    }
+    label = summary.get("registration") or summary.get("icao", "").upper()
+    overview_path = os.path.join(output_dir, "overview.png")
+    plot_map(
+        gdf, gdf_lines,
+        headline=f"{label} \u2014 {len(legs)} legs",
+        dek=format_time_span(gdf),
+        source="ADS-B Exchange",
+        output_path=overview_path,
+        background=background,
+        leg_labels=leg_labels, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio,
+    )
+    return overview_path
+
+
+def _leg_dir(output_dir, leg):
+    return os.path.join(output_dir, f"leg{leg['leg_id']}_{_sanitize_for_path(leg['call_sign'])}")
+
+
 def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, label_prefix="", gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9"):
     """Write data + summary + map/charts for one gdf (a whole trace, or one leg of it).
 
@@ -127,30 +184,7 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
     click.echo(headline_text)
 
     if not no_plots:
-        label = summary.get("registration") or summary.get("icao", "").upper()
-        aircraft = summary.get("description") or summary.get("aircraft_type") or ""
-        headline = f"{label} \u2014 {aircraft}" if aircraft else label
-        dek = format_time_span(gdf)
-        if "leg_detection" in gdf and (gdf["leg_detection"] == "inferred_ground_stop").any():
-            dek += "\nLeg boundaries inferred from ground reports"
-        multilaterated_note = " \u2014 some positions are multilaterated estimates" if summary.get("has_multilaterated_positions") else ""
-        # plot_map credits the basemap tiles on its own, so it gets the bare
-        # data-source label; the charts have no basemap, so they get a
-        # complete "Source:" line.
-        flight_source_label = f"ADS-B Exchange{multilaterated_note}"
-        chart_source = f"Source: ADS-B Exchange{multilaterated_note}"
-
-        map_path = os.path.join(output_dir, "map.png")
-        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
-        written["map"] = map_path
-
-        alt_path = os.path.join(output_dir, "altitude.png")
-        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=chart_source, aspect_ratio=aspect_ratio)
-        written["altitude_chart"] = alt_path
-
-        speed_path = os.path.join(output_dir, "speed.png")
-        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=chart_source, aspect_ratio=aspect_ratio)
-        written["speed_chart"] = speed_path
+        written.update(_plot_flight(gdf, gdf_lines, summary, output_dir, background, gap_minutes, aspect_ratio))
 
     return written
 
@@ -171,28 +205,13 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
     click.echo(tracer.headline_for(summary))
 
     if not no_plots:
-        leg_labels = {
-            row["flight_leg"]: f"{row['call_sign']} \u2013 {row['start_time_utc'].strftime('%b %d, %H:%M')} UTC"
-            for _, row in gdf_lines.iterrows()
-        }
-        label = summary.get("registration") or summary.get("icao", "").upper()
-        overview_path = os.path.join(output_dir, "overview.png")
-        plot_map(
-            gdf, gdf_lines,
-            headline=f"{label} \u2014 {len(legs)} legs",
-            dek=format_time_span(gdf),
-            source="ADS-B Exchange",
-            output_path=overview_path,
-            background=background,
-            leg_labels=leg_labels, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio,
-        )
-        written["overview"] = overview_path
+        written["overview"] = _plot_overview(gdf, gdf_lines, legs, summary, output_dir, background, gap_minutes, aspect_ratio)
 
     click.echo(f"\nRendering each leg separately into its own subfolder ({len(legs)} legs)...")
     for leg in legs:
         leg_id = leg["leg_id"]
         leg_gdf = gdf[gdf["leg_id"] == leg_id].reset_index(drop=True)
-        leg_dir = os.path.join(output_dir, f"leg{leg_id}_{_sanitize_for_path(leg['call_sign'])}")
+        leg_dir = _leg_dir(output_dir, leg)
         leg_written = _render_flight(
             tracer, leg_gdf, leg_dir, resolved_timezone, background, formats, no_plots,
             label_prefix=f"Leg {leg_id}: ", gap_minutes=gap_minutes, aspect_ratio=aspect_ratio,
@@ -357,6 +376,72 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
 
 
 @click.command()
+@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.option("--background", default=None,
+              help="Basemap (see trace --help). Default: esri-light.")
+@click.option("--aspect-ratio", type=click.Choice(["16:9", "9:16"]), default=None,
+              help="Frame shape. Default: 16:9.")
+@click.option("--gap-minutes", type=click.FloatRange(min=0, min_open=True), default=None,
+              help=f"Dash connections across gaps longer than this. Default: {DEFAULT_GAP_MINUTES:g}.")
+@click.option("--timezone", default=None,
+              help="IANA zone, 'auto', or 'utc'. Default: the zone the run was saved with.")
+@click.option("--output", default=None, type=click.Path(file_okay=False),
+              help="Write images here instead of replacing the run's own. Data files are never rewritten.")
+def render(folder, background, aspect_ratio, gap_minutes, timezone, output):
+    """Redraw maps and charts from a saved run folder, without fetching.
+
+    Reads trace.csv, so the run must have been saved with the csv format.
+    Change the basemap, frame shape, gap threshold or display timezone;
+    only images are written, never the data files.
+
+        flight-tracer render data/a40442_2026-09-16_2026-09-16 --background osm
+        flight-tracer render data/a40442_2026-09-16_2026-09-16 --aspect-ratio 9:16 --output variants/portrait
+    """
+    background = background or "esri-light"
+    aspect_ratio = aspect_ratio or "16:9"
+    gap_minutes = gap_minutes or DEFAULT_GAP_MINUTES
+    try:
+        resolve_basemap(background)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from None
+
+    saved_zone = read_json(os.path.join(folder, "summary.json")).get("timezone")
+    try:
+        if timezone is None:
+            resolved_timezone = saved_zone
+        elif timezone.lower() == "auto":
+            first = load_saved_trace(folder).dropna(subset=["lat", "lon"]).iloc[0]
+            resolved_timezone = resolve_timezone("auto", lat=first["lat"], lon=first["lon"])
+            click.echo(f"Inferred timezone from location: {resolved_timezone}")
+        else:
+            resolved_timezone = resolve_timezone(timezone)
+        gdf = load_saved_trace(folder, timezone=resolved_timezone)
+    except (FileNotFoundError, ValueError, ImportError) as exc:
+        raise click.ClickException(str(exc)) from None
+
+    output_dir = output or folder
+    tracer = FlightTracer(aircraft_ids=sorted(gdf["icao"].unique()))
+    summary = tracer.summarize(gdf, timezone=resolved_timezone)
+    legs = tracer.leg_table(gdf)
+    written = {}
+
+    if len(legs) > 1:
+        gdf_lines = tracer.create_linestrings(gdf)
+        written["overview"] = _plot_overview(gdf, gdf_lines, legs, summary, output_dir, background, gap_minutes, aspect_ratio)
+        for leg in legs:
+            leg_gdf = gdf[gdf["leg_id"] == leg["leg_id"]].reset_index(drop=True)
+            leg_summary = tracer.summarize(leg_gdf, timezone=resolved_timezone)
+            written.update({f"leg{leg['leg_id']}_{k}": v for k, v in _plot_flight(
+                leg_gdf, tracer.create_linestrings(leg_gdf), leg_summary, _leg_dir(output_dir, leg),
+                background, gap_minutes, aspect_ratio).items()})
+    else:
+        written.update(_plot_flight(gdf, tracer.create_linestrings(gdf), summary, output_dir,
+                                    background, gap_minutes, aspect_ratio))
+
+    click.echo(f"Wrote {len(written)} images to {output_dir}/")
+
+
+@click.command()
 @click.option("--n-number", required=True, help="FAA tail number, e.g. N358TV or 358TV.")
 def resolve(n_number):
     """Look up an N-number's ICAO hex via the FAA registry, without fetching a trace."""
@@ -373,6 +458,7 @@ def resolve(n_number):
 
 cli.add_command(trace)
 cli.add_command(resolve)
+cli.add_command(render)
 
 if __name__ == "__main__":
     cli()

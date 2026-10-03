@@ -37,11 +37,24 @@ flight-tracer trace
   --bucket NAME            Upload the output folder to this S3 bucket.
   --aws-profile NAME       AWS profile for --bucket uploads.
 
+flight-tracer render FOLDER
+  --background NAME        Basemap. Default: esri-light.
+  --aspect-ratio RATIO     16:9 (default) or 9:16.
+  --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
+  --timezone ZONE          IANA zone, 'auto' or 'utc'. Default: the zone the run was saved with.
+  --output DIR             Write images here instead of replacing the run's own.
+
 flight-tracer resolve --n-number TAIL
   Print the ICAO hex, aircraft type and registered owner for a tail number.
 ```
 
 Historical ranges include both dates. `--date` takes precedence over `--start`/`--end`, which take precedence over the URL date. `--recent` forces the recent endpoint. If only `--start` or `--end` is supplied, that date is used for both. Dates select UTC archive files; `--timezone` changes display times, not which files are fetched.
+
+## Re-rendering a saved run
+
+`flight-tracer render FOLDER` redraws maps and charts from a run's `trace.csv` without fetching again. The run must have been saved with the `csv` format. Options you leave out use the defaults, not the original run's choices, except `--timezone`, which defaults to the zone in `summary.json`. Local times are recomputed from UTC.
+
+Only images are written: `map.png`, `altitude.png` and `speed.png`, plus `overview.png` and per-leg subfolders when the CSV holds several legs. Data files are never rewritten, so `summary.json` keeps its original timezone. Without `--output`, existing images are replaced. A run that was narrowed to one leg re-renders as that leg. Folders saved before `leg_detection` was recorded render normally, with leg detection shown as unknown.
 
 ## Time windows
 

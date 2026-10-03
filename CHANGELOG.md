@@ -9,6 +9,13 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Add `flight-tracer render FOLDER` to redraw maps and charts from a saved
+  run's `trace.csv` with a different basemap, aspect ratio, gap threshold or
+  timezone, without fetching again. Writes images only, in place or to
+  `--output`.
+
 ## [0.2.10] - 2026-10-03
 
 ## [0.2.9] - 2026-10-03
