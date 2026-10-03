@@ -5,12 +5,14 @@ from datetime import datetime
 
 import click
 
+from flight_tracer import __version__
 from flight_tracer.core import FlightTracer
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
-from flight_tracer.viz import DEFAULT_GAP_MINUTES, plot_map, plot_series
+from flight_tracer.viz import DEFAULT_GAP_MINUTES, format_time_span, plot_map, plot_series, resolve_basemap
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="flight-tracer")
 def cli():
     """FlightTracer: turn an N-number, ICAO hex or ADS-B Exchange URL into a
     mapped, summarized flight trace in one command."""
@@ -100,7 +102,7 @@ def _sanitize_for_path(value):
     return safe or "unknown"
 
 
-def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, label_prefix="", gap_minutes=DEFAULT_GAP_MINUTES):
+def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, label_prefix="", gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9"):
     """Write data + summary + map/charts for one gdf (a whole trace, or one leg of it).
 
     The single unit of rendering, reused for a plain single-leg trace and
@@ -127,11 +129,7 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
         label = summary.get("registration") or summary.get("icao", "").upper()
         aircraft = summary.get("description") or summary.get("aircraft_type") or ""
         headline = f"{label} \u2014 {aircraft}" if aircraft else label
-        if summary.get("first_contact_local"):
-            dek = (f"Tracked {summary['first_contact_local']} to {summary['last_contact_local']} "
-                   f"(UTC: {summary['first_contact_utc']} to {summary['last_contact_utc']})")
-        else:
-            dek = f"Tracked {summary.get('first_contact_utc')} to {summary.get('last_contact_utc')}"
+        dek = format_time_span(gdf)
         multilaterated_note = " \u2014 some positions are multilaterated estimates" if summary.get("has_multilaterated_positions") else ""
         # plot_map credits the basemap tiles on its own, so it gets the bare
         # data-source label; the charts have no basemap, so they get a
@@ -140,21 +138,21 @@ def _render_flight(tracer, gdf, output_dir, resolved_timezone, background, forma
         chart_source = f"Source: ADS-B Exchange{multilaterated_note}"
 
         map_path = os.path.join(output_dir, "map.png")
-        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background, gap_minutes=gap_minutes)
+        plot_map(gdf, gdf_lines, headline, dek, flight_source_label, map_path, background=background, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
         written["map"] = map_path
 
         alt_path = os.path.join(output_dir, "altitude.png")
-        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=chart_source)
+        plot_series(gdf, "altitude", "Altitude", "Feet", alt_path, source=chart_source, aspect_ratio=aspect_ratio)
         written["altitude_chart"] = alt_path
 
         speed_path = os.path.join(output_dir, "speed.png")
-        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=chart_source)
+        plot_series(gdf, "ground_speed", "Ground speed", "Knots", speed_path, source=chart_source, aspect_ratio=aspect_ratio)
         written["speed_chart"] = speed_path
 
     return written
 
 
-def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=DEFAULT_GAP_MINUTES):
+def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9"):
     """Multi-leg case: full data + a global summary at the root, an overview
     map with a proper per-leg legend, and one full single-leg-shaped render
     per leg in its own subfolder."""
@@ -179,11 +177,11 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
         plot_map(
             gdf, gdf_lines,
             headline=f"{label} \u2014 {len(legs)} legs",
-            dek=f"{summary.get('first_contact_utc')} to {summary.get('last_contact_utc')}",
+            dek=format_time_span(gdf),
             source="ADS-B Exchange",
             output_path=overview_path,
             background=background,
-            leg_labels=leg_labels, gap_minutes=gap_minutes,
+            leg_labels=leg_labels, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio,
         )
         written["overview"] = overview_path
 
@@ -194,7 +192,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
         leg_dir = os.path.join(output_dir, f"leg{leg_id}_{_sanitize_for_path(leg['call_sign'])}")
         leg_written = _render_flight(
             tracer, leg_gdf, leg_dir, resolved_timezone, background, formats, no_plots,
-            label_prefix=f"Leg {leg_id}: ", gap_minutes=gap_minutes,
+            label_prefix=f"Leg {leg_id}: ", gap_minutes=gap_minutes, aspect_ratio=aspect_ratio,
         )
         written.update({f"leg{leg_id}_{k}": v for k, v in leg_written.items()})
 
@@ -218,8 +216,12 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.option("--output", default="data", show_default=True, help="Directory to write the run's output folder into.")
 @click.option("--filter-ground/--keep-ground", default=True, help="Drop points where altitude == 'ground'.")
 @click.option("--background", default="esri-light", show_default=True,
-              help="Basemap: osm, esri-light, esri-street, esri-topo, esri-satellite, esri-natgeo.")
+              help="Basemap: osm, esri-light, esri-street, esri-topo, esri-satellite, esri-natgeo, "
+                   "mapbox (streets), mapbox-light, mapbox-dark, mapbox-outdoors. "
+                   "Mapbox requires MAPBOX_ACCESS_TOKEN.")
 @click.option("--formats", default="csv,geojson", show_default=True, help="Comma list of output formats: csv,geojson,shp.")
+@click.option("--aspect-ratio", type=click.Choice(["16:9", "9:16"]),
+              default="16:9", show_default=True, help="Frame shape for all maps and charts.")
 @click.option("--gap-minutes", type=click.FloatRange(min=0, min_open=True),
               default=DEFAULT_GAP_MINUTES, show_default=True,
               help="Dash map connections across tracking gaps longer than this many minutes.")
@@ -227,7 +229,7 @@ def _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, backgroun
 @click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
 @click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
 def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
-          filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes):
+          filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes, aspect_ratio):
     """Fetch, process, map and summarize a flight trace in one step.
 
     Pick the entry point that matches what you have:
@@ -245,6 +247,11 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
     leg, 'latest', or 'all' (the default) for every leg in its own
     subfolder plus an overview map.
     """
+    if not no_plots:
+        try:
+            resolve_basemap(background)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from None
     targets, date_hint = _resolve_targets(icao, n_number, url)
     icaos = [t[0] for t in targets]
 
@@ -290,12 +297,12 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
     leg_choice = _resolve_leg_choice(legs, leg)
 
     if leg_choice == "all" and len(legs) > 1:
-        written = _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes)
+        written = _render_all_legs(tracer, gdf, legs, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
     else:
         if leg_choice != "all":
             click.echo(f"Rendering leg {leg_choice} only ({len(legs)} legs total in this window).")
             gdf = gdf[gdf["leg_id"] == leg_choice].reset_index(drop=True)
-        written = _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes)
+        written = _render_flight(tracer, gdf, output_dir, resolved_timezone, background, formats, no_plots, gap_minutes=gap_minutes, aspect_ratio=aspect_ratio)
 
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")
 

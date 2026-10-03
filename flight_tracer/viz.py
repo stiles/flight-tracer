@@ -10,7 +10,11 @@ import contextily as ctx
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import math
+import os
+from pathlib import Path
+from urllib.parse import quote
 import numpy as np
+from xyzservices import TileProvider
 import pandas as pd
 import geopandas as gpd
 from matplotlib.collections import LineCollection
@@ -59,7 +63,7 @@ def _draw_coverage(ax, routes, colors, multi_leg):
             segment_colors.append(colors.get(row.flight_leg, COLOR_FLIGHT) if multi_leg else COLOR_FLIGHT)
             styles.append((0, (4, 3)) if row.coverage_gap else "solid")
     ax.add_collection(LineCollection(segments, colors=segment_colors, linestyles=styles,
-                                     linewidths=2.2, zorder=3))
+                                     linewidths=2.2, capstyle="round", zorder=3))
 
 # Web Mercator repeats horizontally every circumference of the Earth.
 WORLD_WIDTH = 2 * math.pi * 6378137
@@ -92,7 +96,8 @@ def _draw_basemap(ax, provider, zoom=None):
     south, north = ax.get_ylim()
     half = WORLD_WIDTH / 2
     if -half <= west < east <= half:
-        kwargs = {"source": provider, "reset_extent": False}
+        # Render the provider's full credit once in our wrapped footer.
+        kwargs = {"source": provider, "reset_extent": True, "attribution": False}
         if zoom is not None:
             kwargs["zoom"] = zoom
         ctx.add_basemap(ax, **kwargs)
@@ -149,6 +154,97 @@ AP_MONTHS = {
 def _ap_date(ts):
     return f"{AP_MONTHS[ts.month]} {ts.day}, {ts.year}"
 
+
+ASPECT_SIZES = {"16:9": (9.6, 5.4), "9:16": (5.4, 9.6)}
+
+
+def _figure_size(figsize, aspect_ratio):
+    if aspect_ratio not in ASPECT_SIZES:
+        raise ValueError("aspect_ratio must be '16:9' or '9:16'")
+    return figsize if figsize is not None else ASPECT_SIZES[aspect_ratio]
+
+
+def _human_span(start, end):
+    if start.date() == end.date():
+        dates = _ap_date(start)
+    elif (start.year, start.month) == (end.year, end.month):
+        dates = f"{AP_MONTHS[start.month]} {start.day}–{end.day}, {start.year}"
+    elif start.year == end.year:
+        dates = f"{AP_MONTHS[start.month]} {start.day}–{AP_MONTHS[end.month]} {end.day}, {end.year}"
+    else:
+        dates = f"{_ap_date(start)}–{_ap_date(end)}"
+
+    def clock(ts):
+        return f"{ts.hour % 12 or 12}:{ts.minute:02d}"
+
+    def period(ts):
+        return "a.m." if ts.hour < 12 else "p.m."
+
+    first, last = clock(start), clock(end)
+    zone_start, zone_end = start.strftime("%Z") or "UTC", end.strftime("%Z") or "UTC"
+    if zone_start != zone_end:
+        times = f"{first} {period(start)} {zone_start}–{last} {period(end)} {zone_end}"
+    elif start.date() == end.date() and period(start) == period(end):
+        times = f"{first}–{last} {period(end)} {zone_end}"
+    else:
+        times = f"{first} {period(start)}–{last} {period(end)} {zone_end}"
+    return f"{dates} · {times}"
+
+
+def format_time_span(df, time_col=None):
+    """Readable minute-precision dates; local spans retain their UTC companion."""
+    time_col = time_col or ("point_time_local" if "point_time_local" in df else "point_time_utc")
+    times = df[time_col].dropna().sort_values()
+    if times.empty:
+        return ""
+    label = _human_span(times.iloc[0], times.iloc[-1])
+    if time_col == "point_time_local" and "point_time_utc" in df:
+        utc = df["point_time_utc"].dropna().sort_values()
+        if not utc.empty:
+            label += "\n" + _human_span(utc.iloc[0], utc.iloc[-1])
+    return label
+
+
+def _wrap_text(fig, text, width, fontsize, weight="normal"):
+    """Wrap using actual font metrics, rather than a guessed character count."""
+    from matplotlib.font_manager import FontProperties
+    renderer = fig.canvas.get_renderer()
+    font = FontProperties(family=FONT_STACK, size=fontsize, weight=weight)
+    max_width = width * fig.bbox.width
+    lines = []
+    for paragraph in str(text).splitlines():
+        line = ""
+        for word in paragraph.split():
+            candidate = f"{line} {word}".strip()
+            if line and renderer.get_text_width_height_descent(candidate, font, False)[0] > max_width:
+                lines.append(line)
+                line = word
+            else:
+                line = candidate
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _header(fig, title, subtitle):
+    """Lay out text and return the top of the available plotting panel."""
+    y = 0.96
+    for text, size, weight, color in ((title, 15, "bold", COLOR_TEXT),
+                                      (subtitle, 10, "normal", COLOR_TEXT)):
+        if not text:
+            continue
+        artist = fig.text(0.025, y, _wrap_text(fig, text, 0.95, size, weight),
+                          fontsize=size, fontweight=weight, color=color, va="top")
+        bounds = artist.get_window_extent(fig.canvas.get_renderer())
+        y -= bounds.height / fig.bbox.height + 0.10 / fig.get_figheight()
+    return y - 0.06 / fig.get_figheight()
+
+
+def _footer(fig, text):
+    artist = fig.text(0.025, 0.02, _wrap_text(fig, text, 0.95, 8), fontsize=8,
+                      color=COLOR_MUTED, va="bottom")
+    height = artist.get_window_extent(fig.canvas.get_renderer()).height / fig.bbox.height
+    return artist, 0.02 + height + 0.12 / fig.get_figheight()
+
 BASEMAPS = {
     "osm": ("OpenStreetMap.Mapnik", "OpenStreetMap contributors"),
     "esri-light": ("Esri.WorldGrayCanvas", "Esri"),
@@ -170,6 +266,14 @@ RETIRED_BASEMAPS = {
 }
 
 DEFAULT_BASEMAP = "esri-light"
+MAPBOX_STYLES = {
+    "mapbox": "streets-v12",
+    "mapbox-streets": "streets-v12",
+    "mapbox-light": "light-v11",
+    "mapbox-dark": "dark-v11",
+    "mapbox-outdoors": "outdoors-v12",
+}
+MAPBOX_CREDIT = "© Mapbox, © OpenStreetMap"
 
 
 def configure_style():
@@ -197,6 +301,24 @@ def resolve_basemap(background):
     key = (background or DEFAULT_BASEMAP).lower()
     key = RETIRED_BASEMAPS.get(key, key)
 
+    if key.startswith("mapbox"):
+        if key not in MAPBOX_STYLES:
+            raise ValueError("Unknown Mapbox background. Choose mapbox, mapbox-streets, "
+                             "mapbox-light, mapbox-dark or mapbox-outdoors. "
+                             "Mapbox Standard is not supported by the Static Tiles API.")
+        token = os.environ.get("MAPBOX_ACCESS_TOKEN", "").strip()
+        if not token:
+            raise ValueError("Mapbox requires MAPBOX_ACCESS_TOKEN. Set this environment "
+                             "variable to your Mapbox public access token.")
+        provider = TileProvider(
+            name=key,
+            url="https://api.mapbox.com/styles/v1/mapbox/{style}/tiles/512/{z}/{x}/{y}@2x"
+                "?access_token={access_token}",
+            style=MAPBOX_STYLES[key], access_token=quote(token, safe=""),
+            attribution=MAPBOX_CREDIT, min_zoom=0, max_zoom=22,
+        )
+        return provider, MAPBOX_CREDIT
+
     if key not in BASEMAPS:
         print(f"Unknown basemap '{background}'; using '{DEFAULT_BASEMAP}'.")
         key = DEFAULT_BASEMAP
@@ -205,7 +327,26 @@ def resolve_basemap(background):
     provider = ctx.providers
     for part in path.split("."):
         provider = getattr(provider, part)
-    return provider, credit
+    return provider, provider.get("attribution") or credit
+
+
+def _map_source_text(source, credit):
+    return "\n".join(text for text in (
+        f"Source: {source}" if source else "",
+        f"Basemap: {credit}" if credit else "",
+    ) if text)
+
+
+def _add_mapbox_logo(fig, bottom):
+    """Official black logo on the white footer; 40 px high at export DPI."""
+    logo = plt.imread(Path(__file__).parent / "assets" / "mapbox-logo.png")
+    height = 0.2
+    width = height * logo.shape[1] / logo.shape[0]
+    ax = fig.add_axes([0.025 + 0.2 / fig.get_figwidth(),
+                       bottom + 0.2 / fig.get_figheight(),
+                       width / fig.get_figwidth(), height / fig.get_figheight()])
+    ax.imshow(logo)
+    ax.set_axis_off()
 
 
 def _add_basemap(ax, background, zoom=None):
@@ -215,7 +356,12 @@ def _add_basemap(ax, background, zoom=None):
         _draw_basemap(ax, provider, zoom)
         return credit
     except Exception as exc:
-        print(f"Could not load the {credit} basemap ({exc}); falling back to '{DEFAULT_BASEMAP}'.")
+        if provider.name in MAPBOX_STYLES:
+            # HTTP exceptions often contain the complete URL and access token.
+            print(f"Could not load Mapbox tiles. Check your token, its URL restrictions, "
+                  f"and account access; falling back to '{DEFAULT_BASEMAP}'.")
+        else:
+            print(f"Could not load the {credit} basemap ({exc}); falling back to '{DEFAULT_BASEMAP}'.")
         fallback_provider, fallback_credit = resolve_basemap(DEFAULT_BASEMAP)
         try:
             _draw_basemap(ax, fallback_provider, zoom)
@@ -226,14 +372,13 @@ def _add_basemap(ax, background, zoom=None):
 
 
 def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
-             background=DEFAULT_BASEMAP, figsize=(10, 7.5), pad_factor=0.25, zoom=None,
-             leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES):
+             background=DEFAULT_BASEMAP, figsize=None, pad_factor=0.25, zoom=None,
+             leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9"):
     """Plot a flight trace: route, contact markers, basemap and CNN-style chrome.
 
     `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
-    not a full sentence -- the basemap's own credit is added automatically,
-    so the saved source line reads "Sources: ADS-B Exchange (flight); Esri
-    (basemap)" rather than crediting only one of the two things on the map.
+    not a full sentence. The provider's complete attribution is added in a
+    separate wrapped footer beneath the map, without an overlay on the tiles.
 
     `leg_labels`: optional {flight_leg: label} dict, for a multi-leg overview
     (e.g. "VOC4062 -- Sep 20, 13:00 UTC"). When given, the legend identifies
@@ -253,6 +398,7 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     points_3857, lines_3857 = _project_map_data(gdf_points, gdf_lines)
     has_gaps = has_times and lines_3857 is not None and lines_3857["coverage_gap"].any()
 
+    figsize = _figure_size(figsize, aspect_ratio)
     fig = plt.figure(figsize=figsize)
 
     # Reserve fixed panels for the headline/dek and the source line, in figure
@@ -260,7 +406,17 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     # (rather than plt.subplots + tight_layout) means we know exactly how many
     # inches the map panel gets, so the geographic extent can be pre-padded to
     # that panel's aspect ratio below.
-    top, bottom, left, right = 0.85, 0.06, 0.02, 0.98
+    top = _header(fig, headline, dek)
+    _, expected_credit = resolve_basemap(background)
+    _, fallback_credit = resolve_basemap(DEFAULT_BASEMAP)
+    # Reserve enough space for either provider before fitting the map.
+    candidates = [_map_source_text(source, credit) for credit in (expected_credit, fallback_credit)]
+    reserved = max(candidates, key=lambda text: len(_wrap_text(fig, text, 0.95, 8).splitlines()))
+    footer, bottom = _footer(fig, reserved)
+    logo_bottom = bottom
+    if expected_credit == MAPBOX_CREDIT:
+        bottom += 0.6 / fig.get_figheight()
+    left, right = 0.025, 0.975
     ax = fig.add_axes([left, bottom, right - left, top - bottom])
 
     legs = points_3857["flight_leg"].unique() if "flight_leg" in points_3857.columns else [None]
@@ -328,42 +484,28 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     ax.set_aspect("equal", adjustable="box")
 
     credit = _add_basemap(ax, background, zoom=zoom)
+    if credit == MAPBOX_CREDIT:
+        _add_mapbox_logo(fig, logo_bottom)
+    # Tile bounds must never replace the extent fitted to this exact panel.
+    ax.set_xlim(xmin - x_pad, xmax + x_pad)
+    ax.set_ylim(ymin - y_pad, ymax + y_pad)
 
     ax.set_axis_off()
     handles, labels = ax.get_legend_handles_labels()
     if has_gaps:
         handles.append(Line2D([], [], color=COLOR_MUTED, linewidth=2.2, linestyle=(0, (4, 3))))
         labels.append("Tracking gap (approximate connection)")
+    labels = [_wrap_text(fig, label, (right - left) * 0.80, legend_fontsize) for label in labels]
     ax.legend(handles, labels, loc="lower right", fontsize=legend_fontsize,
               frameon=True, facecolor="white", framealpha=0.85)
 
-    fig.text(0.02, 0.97, headline, fontsize=15, fontweight="bold", color=COLOR_TEXT, va="top", wrap=True)
-    if dek:
-        fig.text(0.02, 0.915, dek, fontsize=11, color=COLOR_TEXT, va="top", wrap=True)
-
-    # A map draws on two attributions -- the flight data and the basemap
-    # tiles -- so credit both by name rather than bolting "Basemap: X" onto
-    # a "Source:" line meant for one.
-    attributions = []
-    if source:
-        attributions.append(f"{source} (flight)")
-    if credit:
-        attributions.append(f"{credit} (basemap)")
-
-    if len(attributions) > 1:
-        source_line = "Sources: " + "; ".join(attributions)
-    elif attributions:
-        source_line = f"Source: {attributions[0].split(' (')[0]}"
-    else:
-        source_line = ""
-
-    fig.text(0.02, 0.02, source_line, fontsize=9, color=COLOR_MUTED, va="bottom")
+    footer.set_text(_wrap_text(fig, _map_source_text(source, credit), 0.95, 8))
 
     _save(fig, output_path, tight=False)
 
 
 def plot_series(df, value_col, title, ylabel, output_path, source="",
-                 time_col=None, color=COLOR_FLIGHT, figsize=(9, 3.6)):
+                 time_col=None, color=COLOR_FLIGHT, figsize=None, aspect_ratio="16:9"):
     """A single-series time chart (altitude, speed) in the house style.
 
     Plots in `point_time_local` when the DataFrame has it (i.e. a timezone
@@ -380,7 +522,7 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
         print(f"No data to plot for {value_col}; skipping {output_path}.")
         return
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=_figure_size(figsize, aspect_ratio))
     ax.plot(series[time_col], series[value_col], color=color, linewidth=1.6)
 
     last = series.iloc[-1]
@@ -395,26 +537,13 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
     # grows a date if the trace spans more than one calendar day in that zone
     # (e.g. crosses local midnight).
     first_ts, last_ts = series[time_col].iloc[0], series[time_col].iloc[-1]
-    tz_abbrev = first_ts.strftime("%Z") if first_ts.tzinfo else "UTC"
     spans_multiple_days = first_ts.date() != last_ts.date()
     if spans_multiple_days:
-        date_label = f"{_ap_date(first_ts)} \u2013 {_ap_date(last_ts)}"
         tick_format = "%b %-d, %H:%M"
     else:
-        date_label = _ap_date(first_ts)
         tick_format = "%H:%M"
-    subtitle = f"{date_label} \u00b7 {tz_abbrev}"
-
-    # If the axis is in a local zone, restate the same span in UTC so the
-    # chart is never ambiguous on its own -- the whole point of defaulting to
-    # UTC is defeated if a local-only chart escapes without it.
-    if time_col == "point_time_local" and "point_time_utc" in df.columns:
-        utc_start = df["point_time_utc"].iloc[0].strftime("%H:%M")
-        utc_end = df["point_time_utc"].iloc[-1].strftime("%H:%M")
-        subtitle += f" (UTC {utc_start}\u2013{utc_end})"
-
-    fig.text(0.01, 0.97, title, fontsize=13, fontweight="bold", color=COLOR_TEXT, va="top")
-    fig.text(0.01, 0.87, subtitle, fontsize=10, color=COLOR_MUTED, va="top")
+    top = _header(fig, title, format_time_span(df.dropna(subset=[time_col, value_col]), time_col))
+    _, bottom = _footer(fig, source)
 
     ax.set_ylabel(ylabel, fontsize=10, color=COLOR_AXIS)
     ax.grid(axis="y", color=COLOR_GRID, linewidth=1)
@@ -425,13 +554,11 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
     # ticks would silently show UTC clock time even while the subtitle above
     # claims a local zone.
     ax.xaxis.set_major_formatter(mdates.DateFormatter(tick_format, tz=first_ts.tzinfo))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=3, maxticks=4 if aspect_ratio == "9:16" else 7))
     ax.tick_params(axis="both", length=0, labelsize=9, colors=COLOR_AXIS)
 
-    if source:
-        fig.text(0.01, 0.01, source, fontsize=8.5, color=COLOR_MUTED, va="bottom")
-
-    plt.tight_layout(rect=[0, 0.05, 1, 0.78])
-    _save(fig, output_path)
+    plt.tight_layout(rect=[0.015, bottom, 0.96, top])
+    _save(fig, output_path, tight=False)
 
 
 def _save(fig, output_path, tight=True):

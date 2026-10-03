@@ -79,8 +79,9 @@ class TestCoverage(unittest.TestCase):
                  patch("flight_tracer.cli.FlightTracer.process_flight_data", return_value=points), \
                  patch("flight_tracer.cli." + renderer, return_value={}) as render:
                 result = CliRunner().invoke(cli, ["trace", "--icao", "abed10", "--leg", "all",
-                                                  "--gap-minutes", "2"])
+                                                  "--gap-minutes", "2", "--aspect-ratio", "9:16"])
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertEqual(render.call_args.kwargs["gap_minutes"], 2)
+                self.assertEqual(render.call_args.kwargs["aspect_ratio"], "9:16")
         result = CliRunner().invoke(cli, ["trace", "--icao", "abed10", "--gap-minutes", "0"])
         self.assertNotEqual(result.exit_code, 0)

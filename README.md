@@ -163,6 +163,22 @@ flight-tracer trace --icao a6f3d3 --leg all     # every leg, explicitly
 
 ### Basemaps
 
+Maps and charts default to a **16:9 landscape frame (1920 × 1080)**.
+Use `--aspect-ratio 9:16` for a **1080 × 1920 portrait frame**; it applies
+to the overview, individual flight maps, and altitude/speed charts:
+
+```bash
+flight-tracer trace --icao a40442 --aspect-ratio 9:16
+```
+
+The map fills its available panel without stretching geography. Headings,
+deks, and sources wrap to fit the frame. Dates read like
+“Oct. 3, 2026 · 3:37–4:27 p.m. UTC”; local times retain a separate UTC line.
+The exported data keeps full timestamp precision.
+
+In Python, both `plot_map` and `plot_series` accept `aspect_ratio="9:16"`.
+An explicit `figsize` still overrides the preset for custom-sized output.
+
 Routes crossing the International Date Line stay together on the map, with
 basemap tiles wrapped across the seam. Exported routes split at ±180° into
 a MultiLineString so GIS tools do not draw a line across the world. These
@@ -181,6 +197,33 @@ Default is `esri-light`, a quiet gray canvas that lets the route carry the map. 
 ```bash
 flight-tracer trace --icao a40442 --background esri-satellite
 ```
+
+### Mapbox
+
+Set a Mapbox public access token in your environment, then select a style:
+
+```bash
+export MAPBOX_ACCESS_TOKEN="YOUR_MAPBOX_PUBLIC_ACCESS_TOKEN"
+flight-tracer trace --icao a40442 --background mapbox
+flight-tracer trace --icao a40442 --background mapbox-light --aspect-ratio 9:16
+```
+
+`mapbox` and `mapbox-streets` use Streets v12. Other options are
+`mapbox-light` (Light v11), `mapbox-dark` (Dark v11), and `mapbox-outdoors`
+(Outdoors v12). The same names work with `plot_map(background=...)` in Python.
+These use Mapbox's 512-pixel tiles at double resolution, with the Mapbox logo
+and text attribution included in the footer. Tokens are read at runtime and
+Mapbox request errors do not print the token-bearing URLs.
+
+Mapbox's newer **Standard** style is not available through its
+[Static Tiles API](https://docs.mapbox.com/api/maps/static-tiles/).
+Requests use your Mapbox account's tile quota and billing. A token restricted
+to browser URLs may be rejected by this Python client. Missing tokens produce
+an error before fetching flights; tile failures fall back to Esri Light and
+credit that provider instead. `--no-plots` does not require a Mapbox token.
+
+For publishing, retain the exported attribution and follow Mapbox's
+[attribution guidance](https://docs.mapbox.com/help/dive-deeper/attribution/).
 
 ---
 
@@ -201,6 +244,7 @@ flight-tracer trace
   --background NAME        Basemap. Default: esri-light.
   --formats LIST           Comma list: csv,geojson,shp. Default: csv,geojson.
   --no-plots               Skip map/chart rendering; write data only.
+  --aspect-ratio RATIO     16:9 (default) or 9:16, for all maps and charts.
   --gap-minutes NUMBER     Dash map connections across gaps longer than this. Default: 5.
   --bucket NAME            Upload the output folder to this S3 bucket.
   --aws-profile NAME       AWS profile for --bucket uploads.
@@ -275,7 +319,7 @@ Or from the CLI: `flight-tracer trace --icao a40442 --bucket my-bucket --aws-pro
 
 - Metadata enrichment beyond the FAA registry (e.g. ICAO aircraft-type lookups)
 - Parallel fetching for large fleets
-- Mapbox-backed basemaps for house-style GL maps
+- Custom Mapbox Studio styles for house-style maps
 - Overflight/noise-style analysis helpers
 
 ---

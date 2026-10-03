@@ -9,6 +9,31 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Add Mapbox Streets, Light, Dark, and Outdoors basemaps using
+  `MAPBOX_ACCESS_TOKEN`, with full-resolution tiles, bundled logo and
+  footer attribution. Check missing tokens before fetching flights and
+  omit token-bearing request URLs from error messages.
+
+### Changed
+
+- Default maps and charts to exact 1920 × 1080 output, with
+  `--aspect-ratio 9:16` for 1080 × 1920 portrait graphics. Wrap headings,
+  deks, legends, and source text to the available width.
+- Replace timestamp-heavy visual deks with readable dates and minute-level
+  times, keeping local and UTC spans together.
+
+### Fixed
+
+- Move complete basemap attribution into a wrapped footer, removing the
+  duplicate tile overlay that could overflow the map or cover its legend.
+
+- Preserve fitted map bounds after loading basemap tiles so the map fills
+  its panel instead of shrinking within the output frame.
+
+## [0.2.5] - 2026-10-03
+
 ## [0.2.4] - 2026-09-28
 
 ### Added
