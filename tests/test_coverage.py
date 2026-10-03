@@ -64,7 +64,7 @@ class TestCoverage(unittest.TestCase):
                          gap_minutes=threshold)
                 fig = save.call_args.args[0]
                 try:
-                    labels = [label.get_text() for label in fig.axes[0].get_legend().get_texts()]
+                    labels = [label.get_text() for label in fig.legends[0].get_texts()]
                     self.assertEqual("Tracking gap (approximate connection)" in labels, expected)
                 finally:
                     plt.close(fig)

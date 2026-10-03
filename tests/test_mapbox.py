@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from flight_tracer.cli import cli
 from flight_tracer.viz import (
     MAPBOX_CREDIT, MAPBOX_STYLES, WORLD_WIDTH, _add_basemap,
-    _add_mapbox_logo, _draw_basemap, resolve_basemap,
+    _draw_basemap, resolve_basemap,
 )
 
 
@@ -71,17 +71,5 @@ class TestMapbox(unittest.TestCase):
             with patch("flight_tracer.viz.ctx.bounds2img", side_effect=tile) as tiles:
                 _draw_basemap(ax, provider)
                 self.assertEqual(tiles.call_count, 2)
-        finally:
-            plt.close(fig)
-
-    def test_bundled_logo_renders_within_figure(self):
-        fig = plt.figure(figsize=(5.4, 9.6))
-        try:
-            _add_mapbox_logo(fig, 0.05)
-            fig.canvas.draw()
-            ax = fig.axes[0]
-            self.assertEqual(len(ax.images), 1)
-            self.assertGreater(ax.get_position().y0, 0.05)
-            self.assertLess(ax.get_position().y1, 1)
         finally:
             plt.close(fig)

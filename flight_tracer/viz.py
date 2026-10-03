@@ -11,7 +11,6 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import math
 import os
-from pathlib import Path
 from urllib.parse import quote
 import numpy as np
 from xyzservices import TileProvider
@@ -245,6 +244,24 @@ def _footer(fig, text):
     height = artist.get_window_extent(fig.canvas.get_renderer()).height / fig.bbox.height
     return artist, 0.02 + height + 0.12 / fig.get_figheight()
 
+
+def _map_legend(fig, handles, labels, bottom):
+    """Place a borderless key above the sources, wrapping to fit the frame."""
+    labels = [_wrap_text(fig, label, 0.85, 8) for label in labels]
+    for columns in range(len(labels), 0, -1):
+        legend = fig.legend(
+            handles, labels, loc="lower left", bbox_to_anchor=(0.025, bottom),
+            bbox_transform=fig.transFigure, ncol=columns, fontsize=8,
+            frameon=False, borderaxespad=0, borderpad=0,
+            handlelength=1.4, handletextpad=0.5, columnspacing=1.8,
+            labelspacing=0.8, markerscale=0.8,
+        )
+        bounds = legend.get_window_extent(fig.canvas.get_renderer())
+        if bounds.width <= fig.bbox.width * 0.95 or columns == 1:
+            return bottom + bounds.height / fig.bbox.height + 0.14 / fig.get_figheight()
+        legend.remove()
+    return bottom
+
 BASEMAPS = {
     "osm": ("OpenStreetMap.Mapnik", "OpenStreetMap contributors"),
     "esri-light": ("Esri.WorldGrayCanvas", "Esri"),
@@ -337,18 +354,6 @@ def _map_source_text(source, credit):
     ) if text)
 
 
-def _add_mapbox_logo(fig, bottom):
-    """Official black logo on the white footer; 40 px high at export DPI."""
-    logo = plt.imread(Path(__file__).parent / "assets" / "mapbox-logo.png")
-    height = 0.2
-    width = height * logo.shape[1] / logo.shape[0]
-    ax = fig.add_axes([0.025 + 0.2 / fig.get_figwidth(),
-                       bottom + 0.2 / fig.get_figheight(),
-                       width / fig.get_figwidth(), height / fig.get_figheight()])
-    ax.imshow(logo)
-    ax.set_axis_off()
-
-
 def _add_basemap(ax, background, zoom=None):
     """Draw the basemap, retrying with the default provider if the first fails."""
     provider, credit = resolve_basemap(background)
@@ -413,9 +418,6 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     candidates = [_map_source_text(source, credit) for credit in (expected_credit, fallback_credit)]
     reserved = max(candidates, key=lambda text: len(_wrap_text(fig, text, 0.95, 8).splitlines()))
     footer, bottom = _footer(fig, reserved)
-    logo_bottom = bottom
-    if expected_credit == MAPBOX_CREDIT:
-        bottom += 0.6 / fig.get_figheight()
     left, right = 0.025, 0.975
     ax = fig.add_axes([left, bottom, right - left, top - bottom])
 
@@ -441,20 +443,23 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
         for leg, group in points_3857.groupby("flight_leg"):
             leg_start = group.sort_values(sort_col).iloc[0]
             color = colors.get(leg, COLOR_FLIGHT)
-            ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=40, color=color,
-                       edgecolor="white", linewidth=1, zorder=5, label=leg_labels.get(leg, leg))
-        legend_fontsize = 8
+            ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=24, color=color,
+                       edgecolor="white", linewidth=0.8, zorder=5, label=leg_labels.get(leg, leg))
     else:
-        # First/last contact -- not "start/end": what's plotted is where
-        # ADS-B picked up and lost the signal, which in a crash can sit well
-        # short of where the aircraft actually came down.
-        start = points_3857.iloc[0]
-        end = points_3857.iloc[-1]
-        ax.scatter([start.geometry.x], [start.geometry.y], s=60, color=COLOR_FIRST_CONTACT,
-                   edgecolor="white", linewidth=1.2, zorder=5, label="First contact")
-        ax.scatter([end.geometry.x], [end.geometry.y], s=70, color=COLOR_LAST_CONTACT,
-                   edgecolor="white", linewidth=1.2, zorder=5, marker="s", label="Last contact")
-        legend_fontsize = 9
+        # The final received position does not necessarily establish a landing.
+        ordered = points_3857.sort_values("point_time_utc") if has_times else points_3857
+        start, end = ordered.iloc[0], ordered.iloc[-1]
+        ax.scatter([start.geometry.x], [start.geometry.y], s=24, color=COLOR_FIRST_CONTACT,
+                   edgecolor="white", linewidth=0.8, zorder=5, marker="o", label="Start")
+        ax.scatter([end.geometry.x], [end.geometry.y], s=24, color=COLOR_LAST_CONTACT,
+                   edgecolor="white", linewidth=0.8, zorder=5, marker="o", label="Last location")
+
+    handles, labels = ax.get_legend_handles_labels()
+    if has_gaps:
+        handles.append(Line2D([], [], color=COLOR_MUTED, linewidth=2.2, linestyle=(0, (4, 3))))
+        labels.append("Tracking gap (approximate connection)")
+    bottom = _map_legend(fig, handles, labels, bottom)
+    ax.set_position([left, bottom, right - left, top - bottom])
 
     xmin, ymin, xmax, ymax = points_3857.total_bounds
     x_pad = max((xmax - xmin) * pad_factor, 500)
@@ -484,20 +489,11 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     ax.set_aspect("equal", adjustable="box")
 
     credit = _add_basemap(ax, background, zoom=zoom)
-    if credit == MAPBOX_CREDIT:
-        _add_mapbox_logo(fig, logo_bottom)
     # Tile bounds must never replace the extent fitted to this exact panel.
     ax.set_xlim(xmin - x_pad, xmax + x_pad)
     ax.set_ylim(ymin - y_pad, ymax + y_pad)
 
     ax.set_axis_off()
-    handles, labels = ax.get_legend_handles_labels()
-    if has_gaps:
-        handles.append(Line2D([], [], color=COLOR_MUTED, linewidth=2.2, linestyle=(0, (4, 3))))
-        labels.append("Tracking gap (approximate connection)")
-    labels = [_wrap_text(fig, label, (right - left) * 0.80, legend_fontsize) for label in labels]
-    ax.legend(handles, labels, loc="lower right", fontsize=legend_fontsize,
-              frameon=True, facecolor="white", framealpha=0.85)
 
     footer.set_text(_wrap_text(fig, _map_source_text(source, credit), 0.95, 8))
 

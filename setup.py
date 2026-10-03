@@ -32,7 +32,6 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/stiles/flight-tracer",
     packages=find_packages(include=["flight_tracer", "flight_tracer.*"]),
-    package_data={"flight_tracer": ["assets/*.png", "assets/*.md"]},
     install_requires=[
         "requests",
         "pandas",

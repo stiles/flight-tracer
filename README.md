@@ -176,6 +176,11 @@ deks, and sources wrap to fit the frame. Dates read like
 “Oct. 3, 2026 · 3:37–4:27 p.m. UTC”; local times retain a separate UTC line.
 The exported data keeps full timestamp precision.
 
+A borderless legend sits below the map, above the source credits. Small
+black and orange circles mark **Start** and **Last location**. The last
+received position is not assumed to be a landing. Overview flight keys and
+tracking-gap explanations use the same footer area and wrap to fit.
+
 In Python, both `plot_map` and `plot_series` accept `aspect_ratio="9:16"`.
 An explicit `figsize` still overrides the preset for custom-sized output.
 
@@ -211,8 +216,8 @@ flight-tracer trace --icao a40442 --background mapbox-light --aspect-ratio 9:16
 `mapbox` and `mapbox-streets` use Streets v12. Other options are
 `mapbox-light` (Light v11), `mapbox-dark` (Dark v11), and `mapbox-outdoors`
 (Outdoors v12). The same names work with `plot_map(background=...)` in Python.
-These use Mapbox's 512-pixel tiles at double resolution, with the Mapbox logo
-and text attribution included in the footer. Tokens are read at runtime and
+These use Mapbox's 512-pixel tiles at double resolution, with text attribution
+included in the footer. Tokens are read at runtime and
 Mapbox request errors do not print the token-bearing URLs.
 
 Mapbox's newer **Standard** style is not available through its

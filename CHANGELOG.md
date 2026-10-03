@@ -14,11 +14,15 @@ declaring the API settled.
 ### Added
 
 - Add Mapbox Streets, Light, Dark, and Outdoors basemaps using
-  `MAPBOX_ACCESS_TOKEN`, with full-resolution tiles, bundled logo and
-  footer attribution. Check missing tokens before fetching flights and
+  `MAPBOX_ACCESS_TOKEN`, with full-resolution tiles and
+  text-only footer attribution. Check missing tokens before fetching flights and
   omit token-bearing request URLs from error messages.
 
 ### Changed
+
+- Move map legends below the map with no background or border. Use smaller
+  black and orange circles labeled Start and Last location; wrap overview
+  and tracking-gap keys to fit landscape and portrait frames.
 
 - Default maps and charts to exact 1920 × 1080 output, with
   `--aspect-ratio 9:16` for 1080 × 1920 portrait graphics. Wrap headings,

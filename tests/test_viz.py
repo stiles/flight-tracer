@@ -97,6 +97,42 @@ class TestPlotMapAspect(unittest.TestCase):
                 with Image.open(path) as im:
                     self.assertEqual(im.size, size)
 
+    def test_footer_legend_fits_without_overlapping_map_or_credits(self):
+        for ratio in ("16:9", "9:16"):
+            for overview in (False, True):
+                gdf = self._make_gdf([-118.41 + i * 0.01 for i in range(9)], [34.25] * 9)
+                gdf["point_time_utc"] = pd.date_range("2026-10-03", periods=9, freq="10min", tz="UTC")
+                labels = None
+                if overview:
+                    gdf["leg_id"] = [i // 3 + 1 for i in range(9)]
+                    gdf["flight_leg"] = gdf.leg_id.map(lambda n: f"FLIGHT_leg{n}")
+                    labels = {f"FLIGHT_leg{n}": f"Flight {n} – Oct. 3, 10:00 UTC" for n in range(1, 4)}
+                with patch("flight_tracer.viz._add_basemap", return_value=None), \
+                     patch("flight_tracer.viz._save") as save:
+                    plot_map(gdf, None, "Test", "", "ADS-B Exchange", "unused.png",
+                             aspect_ratio=ratio, leg_labels=labels)
+                    fig = save.call_args.args[0]
+                    try:
+                        fig.canvas.draw()
+                        renderer = fig.canvas.get_renderer()
+                        ax, legend = fig.axes[0], fig.legends[0]
+                        box = legend.get_window_extent(renderer)
+                        self.assertFalse(legend.get_frame_on())
+                        self.assertIsNone(ax.get_legend())
+                        self.assertGreater(box.y0, fig.texts[-1].get_window_extent(renderer).y1)
+                        self.assertLess(box.y1, ax.get_window_extent(renderer).y0)
+                        self.assertGreaterEqual(box.x0, 0)
+                        self.assertLessEqual(box.x1, fig.bbox.width)
+                        if not overview:
+                            self.assertEqual([t.get_text() for t in legend.get_texts()][:2],
+                                             ["Start", "Last location"])
+                            first, last = ax.collections[-2:]
+                            self.assertEqual(first.get_sizes().tolist(), [24])
+                            self.assertEqual(last.get_sizes().tolist(), [24])
+                            self.assertTrue((first.get_paths()[0].vertices == last.get_paths()[0].vertices).all())
+                    finally:
+                        plt.close(fig)
+
     def test_full_topographic_credit_fits_below_map_without_overlay(self):
         from flight_tracer.viz import resolve_basemap
         gdf = self._make_gdf([-118.41, -118.40], [34.25, 34.27])
