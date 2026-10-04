@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-04
+
 ### Added
 
 - Add presets: named tables in `~/.config/flight-tracer/presets.toml`
