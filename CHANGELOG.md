@@ -41,6 +41,27 @@ declaring the API settled.
 
 ## [0.2.10] - 2026-10-03
 
+### Added
+
+- Add `--after` and `--before` to `trace` for inclusive time windows.
+  Timestamps without an offset use `--window-timezone` (default UTC),
+  separate from the display `--timezone`. Legs are detected before
+  trimming, so leg numbers match the full trace. Windowed runs get their
+  own output folder.
+- Add opt-in `--infer-legs` for archives without leg flags. A leg starts
+  at a ground report that follows an airborne report and a second ground
+  report at least five minutes earlier and within one kilometer. Archive
+  flags take precedence, and airborne gaps are never treated as
+  boundaries. Inferred runs get an `_inferred` folder suffix and a map
+  note.
+- Add a `leg_detection` field (`archive_flags`, `inferred_ground_stop` or
+  `unmarked`) to points, routes and `summary.json`, and warn when an
+  aircraft has no usable leg flags.
+- Write `selection.json` with each run's window bounds, leg choice and
+  ground-filter setting.
+- Add a case study of the January 26, 2020, `a9a1ad` archive in
+  `docs/examples/`.
+
 ## [0.2.9] - 2026-10-03
 
 ## [0.2.8] - 2026-10-03

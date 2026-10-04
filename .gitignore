@@ -6,6 +6,7 @@ __pycache__/
 # local
 DEPLOY.md
 fetch_recent_flight.py
+.cursor/docs/
 
 # flight-tracer trace's default --output directory
 data/
