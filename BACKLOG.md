@@ -13,15 +13,16 @@ Callsign lookup by date needs a source investigation next. Checked items are imp
 
 ## Soon
 
-- [ ] **Callsign lookup by date.** Accept identifiers such as `FDX9756`. First investigate historical lookup sources, availability and access requirements; aircraft assignments can vary by date.
-- [ ] **OpenFreeMap support.** Explore a vector-map renderer alongside the current raster tiles, including styles such as Positron, Bright, Liberty, Dark and Fiord. Verify available styles during implementation.
 - [x] **Editable titles and annotations.** Implemented locally: `--title`, `--dek` and `--label LAT,LON,TEXT` on `trace` and `render`, saved in `annotations.json`. Airport-code lookup (e.g. `--airport KLAX`) could build on this later.
-- [ ] **Saved output presets.** Reuse preferred aspect ratios, timezones, basemaps and output directories.
+- [x] **Saved output presets.** Implemented locally: named tables in `~/.config/flight-tracer/presets.toml`, picked with `--preset NAME` over a `[default]` table; `flight-tracer presets` lists them.
 
 ## Later
 
-- [ ] **Interactive HTML export.** Hover for timestamps, altitude and speed; inspect gaps and switch legs.
 - [ ] **Aircraft metadata enrichment.** Improve sparse historical summaries while distinguishing historical information from current registry records.
+- [ ] **Callsign lookup by date.** Accept identifiers such as `FDX9756`. First investigate historical lookup sources, availability and access requirements; aircraft assignments can vary by date.
+- [ ] **OpenFreeMap support.** Explore a vector-map renderer alongside the current raster tiles, including styles such as Positron, Bright, Liberty, Dark and Fiord. Verify available styles during implementation.
+- [ ] **Interactive HTML export.** Hover for timestamps, altitude and speed; inspect gaps and switch legs.
+
 
 ## Ongoing maintenance
 

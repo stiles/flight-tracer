@@ -9,6 +9,15 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Add presets: named tables in `~/.config/flight-tracer/presets.toml`
+  (or `$FLIGHT_TRACER_PRESETS`) that set defaults for display and output
+  options. `[default]` always applies, `--preset NAME` layers a table on
+  top and flags win. `render` lets a run's saved timezone and annotations
+  outrank a preset. `flight-tracer presets` shows the file and its tables.
+- Depend on `tomli` on Python 3.9 and 3.10 to read the presets file.
+
 ## [0.3.1] - 2026-10-03
 
 ### Added

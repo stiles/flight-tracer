@@ -43,7 +43,9 @@ setup(
         "xyzservices",
         "shapely",
         "click",
-        "pytz"
+        "pytz",
+        # tomllib is in the standard library from 3.11.
+        "tomli>=1.1; python_version < '3.11'",
     ],
     extras_require={
         "faa": ["hangarbay"],

@@ -9,6 +9,7 @@ flight-tracer --version
 flight-tracer --help
 flight-tracer trace --help
 flight-tracer resolve --help
+flight-tracer presets
 ```
 
 
@@ -37,6 +38,7 @@ flight-tracer trace
   --title TEXT             Map headline, replacing the generated one.
   --dek TEXT               Map subheading, replacing the generated time span.
   --label LAT,LON,TEXT     Mark a location, e.g. "33.9425,-118.408,LAX". Repeatable.
+  --preset NAME            Apply a named table from presets.toml on top of [default].
   --bucket NAME            Upload the output folder to this S3 bucket.
   --aws-profile NAME       AWS profile for --bucket uploads.
 
@@ -47,6 +49,10 @@ flight-tracer render FOLDER
   --timezone ZONE          IANA zone, 'auto' or 'utc'. Default: the zone the run was saved with.
   --output DIR             Write images here instead of replacing the run's own.
   --title / --dek / --label  As for trace. Default: the run's saved annotations.
+  --preset NAME            As for trace; fills in only what the run didn't save.
+
+flight-tracer presets
+  Print where presets are read from and what each table sets.
 
 flight-tracer resolve --n-number TAIL
   Print the ICAO hex, aircraft type and registered owner for a tail number.
@@ -73,6 +79,30 @@ Only images are written: `map.png`, `altitude.png` and `speed.png`, plus `overvi
 `--label` takes `LAT,LON,TEXT`; anything after the second comma is text, so it may contain commas. Labels appear on every map, including each leg map, and the extent widens to include them. Text flips to the left of its marker near the map's right edge. Labels are not added to the legend.
 
 Each `trace` run writes `annotations.json`, even when it's empty, so rerunning a selection clears earlier annotations. `render` reads it: any `--title` or `--dek` replaces the saved value, and any `--label` replaces all saved labels. `render` never rewrites `annotations.json`, so overrides apply only to that render.
+
+## Presets
+
+Presets live in `~/.config/flight-tracer/presets.toml`, or `$XDG_CONFIG_HOME/flight-tracer/presets.toml` when that variable is set. Set `FLIGHT_TRACER_PRESETS` to use a different file. Each table is a preset; keys are spelled like the flags, without the dashes in front:
+
+```toml
+[default]
+timezone = "auto"
+background = "esri-light"
+
+[social]
+aspect-ratio = "9:16"
+output = "~/Desktop/social"
+
+[lapd]
+timezone = "America/Los_Angeles"
+label = ["34.2098,-118.4898,Van Nuys Airport", "34.2597,-118.4134,Whiteman Airport"]
+```
+
+`[default]` applies to every run. `--preset NAME` layers that table on top, and command-line flags override both. Values are checked like flags, so `aspect-ratio = "4:3"` is an error. An unknown key or preset name stops the command before anything is fetched.
+
+Presets can set `timezone`, `window-timezone`, `infer-legs`, `leg`, `output`, `filter-ground`, `background`, `formats`, `aspect-ratio`, `gap-minutes`, `no-plots`, `title`, `dek`, `label` (a string or a list), `bucket` and `aws-profile`. Which aircraft and which dates or times stay on the command line. `trace` records the preset name in `selection.json`.
+
+For `render`, values saved with the run come first: its timezone in `summary.json` and its title, dek and labels in `annotations.json`. A preset fills in only what the run didn't save, plus `background`, `aspect-ratio` and `gap-minutes`. A preset's `output` never redirects `render`; use `--output`.
 
 ## Time windows
 

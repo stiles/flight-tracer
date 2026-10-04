@@ -90,6 +90,25 @@ flight-tracer render data/a40442_2026-09-16_2026-09-16 \
 
 Redraws images from the saved `trace.csv` without fetching the flight again. Data files are not rewritten. Saved annotations carry over; pass `--title`, `--dek` or `--label` to replace them.
 
+### Save your usual settings as presets
+
+```toml
+# ~/.config/flight-tracer/presets.toml
+[default]
+timezone = "auto"
+
+[social]
+aspect-ratio = "9:16"
+output = "~/Desktop/social"
+```
+
+```bash
+flight-tracer trace --icao a40442 --preset social
+flight-tracer presets   # show the file's location and contents
+```
+
+`[default]` always applies. `--preset NAME` adds a named table on top, and flags override both. Keys are spelled like the flags. See the [CLI reference](https://github.com/stiles/flight-tracer/blob/main/docs/cli.md#presets) for what presets can set.
+
 ### Export data without charts
 
 ```bash

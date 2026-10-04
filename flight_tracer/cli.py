@@ -10,6 +10,7 @@ from flight_tracer.annotations import (make_annotations, merge_annotations, pars
                                        read_annotations, write_annotations)
 from flight_tracer.core import FlightTracer
 from flight_tracer.saved import load_saved_trace, read_json
+from flight_tracer.presets import load_presets, presets_path, resolve_preset
 from flight_tracer.identify import parse_adsbx_url, resolve_n_number, resolve_timezone
 from flight_tracer.window import parse_window, select_window
 from flight_tracer.quality import quality_notes
@@ -263,6 +264,30 @@ def _annotation_options(command):
     return command
 
 
+def _preset_option(direct=None):
+    """--preset NAME. Eager, so [default] and the named table become option
+    defaults before anything else is parsed, and flags still win.
+
+    `direct` limits which settings become option defaults; the full set is
+    left in ctx.meta["preset"] for a command that ranks them differently.
+    """
+    def apply(ctx, param, name):
+        try:
+            values = resolve_preset(name)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from None
+        known = {p.name for p in ctx.command.params}
+        seeded = {key: value for key, value in values.items()
+                  if key in known and (direct is None or key in direct)}
+        ctx.default_map = {**(ctx.default_map or {}), **seeded}
+        ctx.meta["preset"] = values
+        return name
+
+    return click.option("--preset", default=None, is_eager=True, callback=apply, metavar="NAME",
+                        help="Apply a named table from presets.toml on top of [default]. "
+                             "Flags win. See `flight-tracer presets`.")
+
+
 @click.command()
 @click.option("--icao", multiple=True, help="ICAO hex code of the aircraft. Repeatable.")
 @click.option("--n-number", multiple=True, help="FAA tail number (e.g. N358TV). Resolved via hangarbay. Repeatable.")
@@ -296,11 +321,12 @@ def _annotation_options(command):
               help="Dash map connections across tracking gaps longer than this many minutes.")
 @click.option("--no-plots", is_flag=True, help="Skip map and chart rendering; write data only.")
 @_annotation_options
+@_preset_option()
 @click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
 @click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
 def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
           filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes, aspect_ratio,
-          after, before, window_timezone, infer_legs, title, dek, labels):
+          after, before, window_timezone, infer_legs, title, dek, labels, preset):
     """Fetch, process, map and summarize a flight trace in one step.
 
     Pick the entry point that matches what you have:
@@ -410,7 +436,7 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
                    "before_utc": str(window_end) if window_end is not None else None,
                    "bounds_inclusive": True, "window_timezone": window_timezone,
                    "infer_legs": infer_legs, "leg": leg_choice,
-                   "filter_ground": filter_ground}, handle, indent=2)
+                   "filter_ground": filter_ground, "preset": preset}, handle, indent=2)
     written["selection"] = selection_path
     written["annotations"] = write_annotations(output_dir, annotations)
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")
@@ -433,13 +459,15 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
 @click.option("--output", default=None, type=click.Path(file_okay=False),
               help="Write images here instead of replacing the run's own. Data files are never rewritten.")
 @_annotation_options
-def render(folder, background, aspect_ratio, gap_minutes, timezone, output, title, dek, labels):
+@_preset_option(direct={"background", "aspect_ratio", "gap_minutes"})
+def render(folder, background, aspect_ratio, gap_minutes, timezone, output, title, dek, labels, preset):
     """Redraw maps and charts from a saved run folder, without fetching.
 
     Reads trace.csv, so the run must have been saved with the csv format.
     Change the basemap, frame shape, gap threshold, display timezone or
     annotations; only images are written, never the data files. The run's
-    saved title, dek and labels are reused unless replaced here.
+    saved title, dek, labels and timezone are reused unless replaced here;
+    a preset fills in only what the run didn't save.
 
         flight-tracer render data/a40442_2026-09-16_2026-09-16 --background osm
         flight-tracer render data/a40442_2026-09-16_2026-09-16 --aspect-ratio 9:16 --output variants/portrait
@@ -452,7 +480,12 @@ def render(folder, background, aspect_ratio, gap_minutes, timezone, output, titl
     except ValueError as exc:
         raise click.ClickException(str(exc)) from None
 
-    saved_zone = read_json(os.path.join(folder, "summary.json")).get("timezone")
+    # Anything the run saved outranks a preset; flags outrank both.
+    from_preset = click.get_current_context().meta.get("preset", {})
+    saved_summary = read_json(os.path.join(folder, "summary.json"))
+    if timezone is None and "timezone" not in saved_summary:
+        timezone = from_preset.get("timezone")
+    saved_zone = saved_summary.get("timezone")
     try:
         if timezone is None:
             resolved_timezone = saved_zone
@@ -467,7 +500,13 @@ def render(folder, background, aspect_ratio, gap_minutes, timezone, output, titl
         raise click.ClickException(str(exc)) from None
 
     output_dir = output or folder
-    annotations = merge_annotations(read_annotations(folder), title, dek, labels)
+    try:
+        preset_annotations = make_annotations(from_preset.get("title"), from_preset.get("dek"),
+                                              [parse_label(value) for value in from_preset.get("labels", [])])
+    except ValueError as exc:
+        raise click.ClickException(f"Preset label: {exc}") from None
+    saved = merge_annotations(preset_annotations, **read_annotations(folder))
+    annotations = merge_annotations(saved, title, dek, labels)
     tracer = FlightTracer(aircraft_ids=sorted(gdf["icao"].unique()))
     summary = tracer.summarize(gdf, timezone=resolved_timezone)
     legs = tracer.leg_table(gdf)
@@ -505,9 +544,28 @@ def resolve(n_number):
     click.echo(f"Owner:     {info.get('owner_name', '')}")
 
 
+@click.command("presets")
+def presets_command():
+    """Show where presets are read from and what each one sets."""
+    path = presets_path()
+    try:
+        tables = load_presets(path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from None
+    if not tables:
+        click.echo(f"No presets file at {path}. For example:\n\n"
+                   '[default]\ntimezone = "auto"\n\n[social]\naspect-ratio = "9:16"')
+        return
+    click.echo(f"Presets from {path}:")
+    for name, table in tables.items():
+        settings = ", ".join(f"{key} = {value!r}" for key, value in table.items()) or "(empty)"
+        click.echo(f"  [{name}] {settings}")
+
+
 cli.add_command(trace)
 cli.add_command(resolve)
 cli.add_command(render)
+cli.add_command(presets_command)
 
 if __name__ == "__main__":
     cli()
