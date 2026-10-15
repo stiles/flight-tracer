@@ -9,6 +9,22 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Changed
+
+- Draw map start and last-location markers larger (about 6pt across, up
+  from 5pt) with a heavier white ring, so the dark start dot stays visible
+  on the blue route. Multi-leg overview start dots match. When the two
+  endpoints would overlap, as on a round trip back to a heliport, they
+  merge into one marker (an orange center in a dark ring) keyed "Start and
+  last location", instead of the last location hiding the start.
+
+### Added
+
+- Add visual regression tests (`tests/test_visual.py`) comparing rendered
+  maps and charts with reference images in `tests/baseline_images/`, using
+  a synthetic basemap so they run offline. CI uploads failed renders and
+  diffs as an artifact.
+
 ## [0.4.0] - 2026-10-14
 
 ### Changed

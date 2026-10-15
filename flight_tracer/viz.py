@@ -159,6 +159,15 @@ COLOR_FLIGHT = "#2364AA"
 COLOR_FIRST_CONTACT = "#253746"  # Blue charcoal
 COLOR_LAST_CONTACT = "#C65D16"   # Burnt orange
 
+# Endpoint markers must stay readable on a 2.2pt route line: the white ring
+# separates the dark start dot from the blue route beneath it.
+ENDPOINT_SIZE = 40      # scatter area, points^2 (about 6pt across)
+ENDPOINT_EDGE = 1.6
+# A round trip (a helicopter back at its heliport) puts start and last
+# location on top of each other; closer than this many marker widths, they
+# merge into one two-tone marker instead of the last one hiding the first.
+ENDPOINT_MERGE_WIDTHS = 1.25
+
 CATEGORY_COLORS = [
     "#2364AA",  # Aviation blue
     "#C65D16",  # Burnt orange
@@ -508,58 +517,38 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
         for leg, group in points_3857.groupby("flight_leg"):
             leg_start = group.sort_values(sort_col).iloc[0]
             color = colors.get(leg, COLOR_FLIGHT)
-            ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=24, color=color,
-                       edgecolor="white", linewidth=0.8, zorder=5, label=leg_labels.get(leg, leg))
+            ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=ENDPOINT_SIZE, color=color,
+                       edgecolor="white", linewidth=ENDPOINT_EDGE, zorder=5,
+                       label=leg_labels.get(leg, leg))
+        handles, labels = ax.get_legend_handles_labels()
     else:
         # The final received position does not necessarily establish a landing.
         ordered = points_3857.sort_values("point_time_utc") if has_times else points_3857
         start, end = ordered.iloc[0], ordered.iloc[-1]
-        ax.scatter([start.geometry.x], [start.geometry.y], s=24, color=COLOR_FIRST_CONTACT,
-                   edgecolor="white", linewidth=0.8, zorder=5, marker="o", label="Start")
-        ax.scatter([end.geometry.x], [end.geometry.y], s=24, color=COLOR_LAST_CONTACT,
-                   edgecolor="white", linewidth=0.8, zorder=5, marker="o", label="Last location")
+        # Provisional panel (before the legend takes its row) -- close enough
+        # to judge whether the two markers would collide at the final scale.
+        panel_w = figsize[0] * (right - left)
+        extent = _fit_extent(_map_bounds(points_3857, marks_3857), pad_factor,
+                             panel_w, figsize[1] * (top - bottom))
+        handles, labels = _draw_endpoints(ax, start.geometry, end.geometry,
+                                          meters_per_point=(extent[1] - extent[0]) / (panel_w * 72))
 
-    handles, labels = ax.get_legend_handles_labels()
     if has_gaps:
         handles.append(Line2D([], [], color=COLOR_MUTED, linewidth=2.2, linestyle=(0, (4, 3))))
         labels.append("Tracking gap (approximate connection)")
     bottom = _map_legend(fig, handles, labels, bottom)
     ax.set_position([left, bottom, right - left, top - bottom])
 
-    xmin, ymin, xmax, ymax = points_3857.total_bounds
-    if marks_3857 is not None:
-        mxmin, mymin, mxmax, mymax = marks_3857.total_bounds
-        xmin, ymin, xmax, ymax = min(xmin, mxmin), min(ymin, mymin), max(xmax, mxmax), max(ymax, mymax)
-    x_pad = max((xmax - xmin) * pad_factor, 500)
-    y_pad = max((ymax - ymin) * pad_factor, 500)
-    data_w = (xmax - xmin) + 2 * x_pad
-    data_h = (ymax - ymin) + 2 * y_pad
-
-    # geopandas' .plot() forces an equal-aspect axes (correctly -- geographic
-    # data shouldn't stretch). Left alone, matplotlib satisfies that by
-    # shrinking whichever side of the axes box doesn't match the data's
-    # aspect ratio, which then throws off the saved image's actual
-    # dimensions once combined with a tight bbox. Padding the extent to the
-    # panel's own aspect ratio first means equal-aspect has nothing to
-    # shrink, so the map fills the whole panel and the output stays the
-    # requested landscape shape.
-    panel_aspect = (figsize[0] * (right - left)) / (figsize[1] * (top - bottom))
-    data_aspect = data_w / data_h
-    if data_aspect > panel_aspect:
-        target_h = data_w / panel_aspect
-        y_pad += (target_h - data_h) / 2
-    else:
-        target_w = data_h * panel_aspect
-        x_pad += (target_w - data_w) / 2
-
-    ax.set_xlim(xmin - x_pad, xmax + x_pad)
-    ax.set_ylim(ymin - y_pad, ymax + y_pad)
+    x0, x1, y0, y1 = _fit_extent(_map_bounds(points_3857, marks_3857), pad_factor,
+                                 figsize[0] * (right - left), figsize[1] * (top - bottom))
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
     ax.set_aspect("equal", adjustable="box")
 
     credit = _add_basemap(ax, background, zoom=zoom)
     # Tile bounds must never replace the extent fitted to this exact panel.
-    ax.set_xlim(xmin - x_pad, xmax + x_pad)
-    ax.set_ylim(ymin - y_pad, ymax + y_pad)
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
 
     ax.set_axis_off()
     if marks_3857 is not None:
@@ -568,6 +557,55 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     footer.set_text(_wrap_text(fig, _map_source_text(source, credit), 0.95, 8))
 
     _save(fig, output_path, tight=False)
+
+
+def _map_bounds(points, marks=None):
+    xmin, ymin, xmax, ymax = points.total_bounds
+    if marks is not None:
+        mxmin, mymin, mxmax, mymax = marks.total_bounds
+        xmin, ymin, xmax, ymax = min(xmin, mxmin), min(ymin, mymin), max(xmax, mxmax), max(ymax, mymax)
+    return xmin, ymin, xmax, ymax
+
+
+def _fit_extent(bounds, pad_factor, panel_w, panel_h):
+    """Pad bounds, then widen to the panel's aspect; returns (x0, x1, y0, y1).
+
+    geopandas' .plot() forces an equal-aspect axes (correctly -- geographic
+    data shouldn't stretch). Left alone, matplotlib satisfies that by
+    shrinking whichever side of the axes box doesn't match the data's aspect
+    ratio, which then throws off the saved image's actual dimensions once
+    combined with a tight bbox. Padding the extent to the panel's own aspect
+    ratio first means equal-aspect has nothing to shrink, so the map fills
+    the whole panel and the output stays the requested shape.
+    """
+    xmin, ymin, xmax, ymax = bounds
+    x_pad = max((xmax - xmin) * pad_factor, 500)
+    y_pad = max((ymax - ymin) * pad_factor, 500)
+    data_w = (xmax - xmin) + 2 * x_pad
+    data_h = (ymax - ymin) + 2 * y_pad
+    panel_aspect = panel_w / panel_h
+    if data_w / data_h > panel_aspect:
+        y_pad += (data_w / panel_aspect - data_h) / 2
+    else:
+        x_pad += (data_h * panel_aspect - data_w) / 2
+    return xmin - x_pad, xmax + x_pad, ymin - y_pad, ymax + y_pad
+
+
+def _draw_endpoints(ax, start, end, meters_per_point):
+    """Start and last-location markers, merged when they'd collide; returns legend entries."""
+    width = math.sqrt(ENDPOINT_SIZE) + ENDPOINT_EDGE
+    style = {"edgecolor": "white", "linewidth": ENDPOINT_EDGE, "zorder": 5, "marker": "o"}
+    if start.distance(end) / meters_per_point < width * ENDPOINT_MERGE_WIDTHS:
+        # A bullseye: the start color as a ring around the last-location
+        # color, so neither hides the other and the key still names both.
+        # Centered on the last location; the start is within a marker width.
+        ring = ax.scatter([end.x], [end.y], s=ENDPOINT_SIZE * 2, color=COLOR_FIRST_CONTACT, **style)
+        core = ax.scatter([end.x], [end.y], s=ENDPOINT_SIZE * 0.55, color=COLOR_LAST_CONTACT,
+                          marker="o", linewidth=0, zorder=6)
+        return [(ring, core)], ["Start and last location"]
+    first = ax.scatter([start.x], [start.y], s=ENDPOINT_SIZE, color=COLOR_FIRST_CONTACT, **style)
+    last = ax.scatter([end.x], [end.y], s=ENDPOINT_SIZE, color=COLOR_LAST_CONTACT, **style)
+    return [first, last], ["Start", "Last location"]
 
 
 def _draw_labels(ax, marks):

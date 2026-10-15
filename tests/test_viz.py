@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from shapely.geometry import Point
 
-from flight_tracer.viz import plot_map, plot_series, format_time_span
+from flight_tracer.viz import ENDPOINT_SIZE, plot_map, plot_series, format_time_span
 
 
 class TestPlotMapAspect(unittest.TestCase):
@@ -127,8 +127,8 @@ class TestPlotMapAspect(unittest.TestCase):
                             self.assertEqual([t.get_text() for t in legend.get_texts()][:2],
                                              ["Start", "Last location"])
                             first, last = ax.collections[-2:]
-                            self.assertEqual(first.get_sizes().tolist(), [24])
-                            self.assertEqual(last.get_sizes().tolist(), [24])
+                            self.assertEqual(first.get_sizes().tolist(), [ENDPOINT_SIZE])
+                            self.assertEqual(last.get_sizes().tolist(), [ENDPOINT_SIZE])
                             self.assertTrue((first.get_paths()[0].vertices == last.get_paths()[0].vertices).all())
                     finally:
                         plt.close(fig)
@@ -196,6 +196,26 @@ class TestBundledFonts(unittest.TestCase):
     def test_license_ships_with_fonts(self):
         from flight_tracer.viz import FONTS_DIR
         self.assertIn("SIL Open Font License", (FONTS_DIR / "OFL.txt").read_text())
+
+
+class TestEndpointMarkers(unittest.TestCase):
+    def _labels(self, end_offset_m):
+        from flight_tracer.viz import _draw_endpoints
+        fig, ax = plt.subplots()
+        try:
+            # 10 m per point: markers are ~7.9pt wide, so they merge under ~100 m.
+            _, labels = _draw_endpoints(ax, Point(0, 0), Point(end_offset_m, 0), meters_per_point=10)
+            return labels, len(ax.collections)
+        finally:
+            plt.close(fig)
+
+    def test_distant_endpoints_get_separate_markers(self):
+        self.assertEqual(self._labels(5000), (["Start", "Last location"], 2))
+
+    def test_colliding_endpoints_merge_into_one_keyed_marker(self):
+        labels, artists = self._labels(50)
+        self.assertEqual(labels, ["Start and last location"])
+        self.assertEqual(artists, 2)  # Ring and core, one legend entry.
 
 
 if __name__ == "__main__":

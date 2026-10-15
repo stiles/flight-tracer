@@ -18,9 +18,12 @@ deks, and sources wrap to fit the frame. Dates read like
 “Oct. 3, 2026 · 3:37–4:27 p.m. UTC”; local times retain a separate UTC line.
 The exported data keeps full timestamp precision.
 
-A borderless legend sits below the map, above the source credits. Small
-black and orange circles mark **Start** and **Last location**. The last
-received position is not assumed to be a landing. Overview flight keys and
+A borderless legend sits below the map, above the source credits.
+White-ringed dark and orange circles mark **Start** and **Last location**.
+When the two would overlap, as on a helicopter patrol that returns to its
+heliport, they merge into one marker, an orange center inside a dark ring,
+keyed **Start and last location**. The last received position is not
+assumed to be a landing. Overview flight keys and
 tracking-gap explanations use the same footer area and wrap to fit.
 
 In Python, both `plot_map` and `plot_series` accept `aspect_ratio="9:16"`.

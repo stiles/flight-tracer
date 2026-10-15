@@ -11,6 +11,9 @@ fetch_recent_flight.py
 # flight-tracer trace's default --output directory
 data/
 
+# Renders from failed visual regression tests
+tests/visual_results/
+
 # macOS
 .DS_Store
 
