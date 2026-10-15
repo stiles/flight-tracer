@@ -9,6 +9,12 @@ When a change to the output is intended, regenerate and review the baselines:
 
     FLIGHT_TRACER_UPDATE_BASELINES=1 python -m pytest tests/test_visual.py
 
+Pixels are only comparable within one matplotlib minor release (3.11 changed
+text rendering and line heights), so regenerating also records the version
+in tests/baseline_images/matplotlib-version.txt. Other versions skip these
+tests; the `visual` CI job installs the recorded version and sets
+FLIGHT_TRACER_REQUIRE_VISUAL=1 so a mismatch fails instead of skipping.
+
 On failure, the new render and a diff image are written to
 tests/visual_results/ (ignored by git; uploaded as a CI artifact).
 """
@@ -19,6 +25,7 @@ import shutil
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib
 import numpy as np
 import pandas as pd
 import pytest
@@ -29,14 +36,34 @@ from flight_tracer import viz
 
 HERE = Path(__file__).parent
 BASELINES = HERE / "baseline_images"
+BASELINE_VERSION_FILE = BASELINES / "matplotlib-version.txt"
 RESULTS = HERE / "visual_results"
 UPDATE = os.environ.get("FLIGHT_TRACER_UPDATE_BASELINES") == "1"
+REQUIRE = os.environ.get("FLIGHT_TRACER_REQUIRE_VISUAL") == "1"
 
-# RMS difference on a 0-255 scale. Renders are pixel-identical across the
-# matplotlib releases we support (its wheels all bundle FreeType 2.6.1), so
-# this only absorbs incidental antialiasing noise. Keep it tight: resizing
-# the endpoint markers on a full 1920x1080 map scores only about 2.5.
+# RMS difference on a 0-255 scale. Within one matplotlib minor release,
+# renders are identical across platforms (figures always use the Agg canvas
+# and its wheels bundle their own FreeType), so this only absorbs incidental
+# antialiasing noise. Keep it tight: resizing the endpoint markers on a full
+# 1920x1080 map scores only about 2.5.
 TOLERANCE = 0.5
+
+
+def _minor(version):
+    return ".".join(version.split(".")[:2])
+
+
+def _check_matplotlib_version():
+    if UPDATE or not BASELINE_VERSION_FILE.exists():
+        return
+    recorded = BASELINE_VERSION_FILE.read_text().strip()
+    if _minor(recorded) == _minor(matplotlib.__version__):
+        return
+    message = (f"Baselines were rendered with matplotlib {recorded}; "
+               f"{matplotlib.__version__} is installed.")
+    if REQUIRE:
+        pytest.fail(message)
+    pytest.skip(message)
 
 START = pd.Timestamp("2026-10-03T08:45:00Z")
 LOCAL_TZ = "America/Los_Angeles"
@@ -131,6 +158,7 @@ CASES = {
 
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_render_matches_baseline(name, tmp_path):
+    _check_matplotlib_version()
     actual = tmp_path / f"{name}.png"
     CASES[name](str(actual))
     expected = BASELINES / f"{name}.png"
@@ -138,6 +166,7 @@ def test_render_matches_baseline(name, tmp_path):
     if UPDATE:
         BASELINES.mkdir(exist_ok=True)
         shutil.copyfile(actual, expected)
+        BASELINE_VERSION_FILE.write_text(matplotlib.__version__ + "\n")
         return
     if not expected.exists():
         pytest.fail(f"No baseline for {name}. Generate one with "

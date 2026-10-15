@@ -181,7 +181,7 @@ pip install --no-deps -e .
 
 ## Contributing and releasing
 
-Run checks with `python -m pytest tests/`. `tests/test_visual.py` compares rendered maps and charts with the reference images in `tests/baseline_images/`. If a change to the output is intended, regenerate them with `FLIGHT_TRACER_UPDATE_BASELINES=1 python -m pytest tests/test_visual.py` and review the new images before committing. Failed comparisons leave the new render and a diff in `tests/visual_results/`. See [PUBLISH.md](https://github.com/stiles/flight-tracer/blob/main/PUBLISH.md) for the release workflow.
+Run checks with `python -m pytest tests/`. `tests/test_visual.py` compares rendered maps and charts with the reference images in `tests/baseline_images/`. If a change to the output is intended, regenerate them with `FLIGHT_TRACER_UPDATE_BASELINES=1 python -m pytest tests/test_visual.py` and review the new images before committing. Pixels are only comparable within one matplotlib minor release, so regenerating records the version in `tests/baseline_images/matplotlib-version.txt`; other versions skip these tests, and a dedicated CI job runs them against the recorded version. Failed comparisons leave the new render and a diff in `tests/visual_results/`. See [PUBLISH.md](https://github.com/stiles/flight-tracer/blob/main/PUBLISH.md) for the release workflow.
 
 ## Credits and license
 
