@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-14
+
 ### Changed
 
 - Draw map start and last-location markers larger (about 6pt across, up
