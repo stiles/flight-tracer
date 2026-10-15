@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-14
+
 ### Fixed
 
 - Render maps and charts on matplotlib's Agg canvas whatever the active
