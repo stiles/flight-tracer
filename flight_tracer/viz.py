@@ -9,6 +9,8 @@ equivalents rather than left to fail silently.
 import contextily as ctx
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 import math
 import os
 from pathlib import Path
@@ -478,7 +480,7 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     has_gaps = has_times and lines_3857 is not None and lines_3857["coverage_gap"].any()
 
     figsize = _figure_size(figsize, aspect_ratio)
-    fig = plt.figure(figsize=figsize)
+    fig = _new_figure(figsize)
 
     # Reserve fixed panels for the headline/dek and the source line, in figure
     # fractions. The rest is the map. Setting the axes' position explicitly
@@ -640,7 +642,8 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
         print(f"No data to plot for {value_col}; skipping {output_path}.")
         return
 
-    fig, ax = plt.subplots(figsize=_figure_size(figsize, aspect_ratio))
+    fig = _new_figure(_figure_size(figsize, aspect_ratio))
+    ax = fig.add_subplot()
     ax.plot(series[time_col], series[value_col], color=color, linewidth=1.6)
 
     last = series.iloc[-1]
@@ -675,13 +678,26 @@ def plot_series(df, value_col, title, ylabel, output_path, source="",
     ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=3, maxticks=4 if aspect_ratio == "9:16" else 7))
     ax.tick_params(axis="both", length=0, labelsize=9, colors=COLOR_AXIS)
 
-    plt.tight_layout(rect=[0.015, bottom, 0.96, top])
+    fig.tight_layout(rect=[0.015, bottom, 0.96, top])
     _save(fig, output_path, tight=False)
+
+
+def _new_figure(figsize):
+    """A figure on its own Agg canvas, independent of the pyplot backend.
+
+    Layout measures text through the canvas renderer. The macOS backend
+    doubles the figure DPI on Retina screens, which hints glyphs at another
+    size and shifts headers and legends by a few pixels, so the same chart
+    would come out differently on a Mac than on Linux. Agg is the same
+    everywhere, and these figures are only ever written to files.
+    """
+    fig = Figure(figsize=figsize)
+    FigureCanvasAgg(fig)
+    return fig
 
 
 def _save(fig, output_path, tight=True):
     import os
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     fig.savefig(output_path, dpi=200, bbox_inches="tight" if tight else None)
-    plt.close(fig)
     print(f"Saved {output_path}")

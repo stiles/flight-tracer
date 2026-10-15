@@ -9,6 +9,13 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Fixed
+
+- Render maps and charts on matplotlib's Agg canvas whatever the active
+  backend. On Retina Macs the default `macosx` backend doubled the DPI used
+  to measure text, so headers, legends and plot areas landed a few pixels
+  off from the same chart made on Linux.
+
 ## [0.4.1] - 2026-10-14
 
 ### Changed
