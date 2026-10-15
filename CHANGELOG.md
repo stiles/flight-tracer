@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-14
+
 ### Changed
 
 - Bundle Inter 4.1 (Regular and Bold, SIL OFL 1.1) in
