@@ -1,7 +1,7 @@
 # flight_tracer/viz.py
 """Publication-ready map and chart rendering for flight traces.
 
-Basemap and typography follow the CNN Visuals house style. Carto withdrew
+Basemap and typography follow a publication-ready style. Carto withdrew
 anonymous tile access some time ago, so its providers are mapped onto Esri
 equivalents rather than left to fail silently.
 """
@@ -11,6 +11,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import math
 import os
+from pathlib import Path
 from urllib.parse import quote
 import numpy as np
 from xyzservices import TileProvider
@@ -148,19 +149,29 @@ COLOR_BACKGROUND = "#FEFEFE"
 
 # One color for the flight itself, wherever it shows up: the map route, and
 # the altitude/speed chart lines. One flight, one color.
-COLOR_FLIGHT = "#5194C3"
+COLOR_FLIGHT = "#2364AA"   
 
 # First/last contact deliberately avoid red+green (reads as a holiday pair,
 # and it's the one combination red-green colorblind readers can't tell
 # apart). First contact is muted -- it's context. Last contact is the point
 # that usually matters most in a breaking-news read, so it gets the bolder
 # color. Both endpoints use small circles, matching the footer key.
-COLOR_FIRST_CONTACT = "#262626"
-COLOR_LAST_CONTACT = "#F18851"
+COLOR_FIRST_CONTACT = "#253746"  # Blue charcoal
+COLOR_LAST_CONTACT = "#C65D16"   # Burnt orange
 
-CATEGORY_COLORS = ["#5194C3", "#F8C153", "#C52622", "#53A796", "#F18851", "#7C4EA5"]
+CATEGORY_COLORS = [
+    "#2364AA",  # Aviation blue
+    "#C65D16",  # Burnt orange
+    "#168477",  # Teal
+    "#8756A6",  # Violet
+    "#B54268",  # Raspberry
+    "#8A7018",  # Ochre
+]
 
-FONT_STACK = ["CNN Sans Display", "Helvetica Neue", "Arial", "DejaVu Sans"]
+# Inter ships with the package (flight_tracer/fonts, SIL OFL 1.1) so output
+# looks the same on every machine; the rest of the stack is only a fallback.
+FONT_STACK = ["Inter", "Roboto", "Helvetica Neue", "Arial", "DejaVu Sans"]
+FONTS_DIR = Path(__file__).with_name("fonts")
 
 # AP style abbreviates all months except March through July.
 AP_MONTHS = {
@@ -312,7 +323,33 @@ MAPBOX_STYLES = {
 MAPBOX_CREDIT = "© Mapbox, © OpenStreetMap"
 
 
+def register_bundled_fonts():
+    """Make the packaged Inter files win over any system-installed copy."""
+    from matplotlib import font_manager
+
+    manager = font_manager.fontManager
+    registered = {os.path.realpath(font.fname) for font in manager.ttflist}
+    for path in sorted(FONTS_DIR.glob("*.ttf")):
+        if os.path.realpath(path) not in registered:
+            manager.addfont(str(path))
+
+    # findfont breaks score ties by list order and addfont appends, so a
+    # system Inter (possibly another version, with other metrics) would
+    # otherwise be chosen first. A stable sort keeps everything else in place.
+    bundled = os.path.realpath(FONTS_DIR)
+    manager.ttflist.sort(
+        key=lambda font: os.path.dirname(os.path.realpath(font.fname)) != bundled)
+    cached = getattr(manager, "_findfont_cached", None)
+    if cached is not None and hasattr(cached, "cache_clear"):
+        cached.cache_clear()
+
+
 def configure_style():
+    try:
+        register_bundled_fonts()
+    except Exception as exc:  # A missing or unreadable font shouldn't stop rendering.
+        import warnings
+        warnings.warn(f"Could not load bundled Inter fonts; falling back to {FONT_STACK[1:]}: {exc}")
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": FONT_STACK,
@@ -399,7 +436,7 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
              background=DEFAULT_BASEMAP, figsize=None, pad_factor=0.25, zoom=None,
              leg_labels=None, gap_minutes=DEFAULT_GAP_MINUTES, aspect_ratio="16:9",
              labels=None):
-    """Plot a flight trace: route, contact markers, basemap and CNN-style chrome.
+    """Plot a flight trace: route, contact markers, basemap.
 
     `source` is the flight-data attribution only (e.g. "ADS-B Exchange"),
     not a full sentence. The provider's complete attribution is added in a

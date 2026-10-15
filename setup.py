@@ -32,6 +32,10 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/stiles/flight-tracer",
     packages=find_packages(include=["flight_tracer", "flight_tracer.*"]),
+    # Inter is bundled so charts render identically everywhere. The fonts
+    # keep their own license (SIL OFL 1.1), which must ship alongside them.
+    package_data={"flight_tracer": ["fonts/*.ttf", "fonts/OFL.txt"]},
+    include_package_data=True,
     install_requires=[
         "requests",
         "pandas",

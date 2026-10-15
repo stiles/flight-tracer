@@ -187,4 +187,4 @@ Run checks with `python -m pytest tests/`. See [PUBLISH.md](https://github.com/s
 
 Flight data comes from [ADS-B Exchange](https://globe.adsbexchange.com/). Consider [subscribing](https://store.adsbexchange.com/collections/subscriptions) or [contributing data](https://www.adsbexchange.com/ways-to-join-the-exchange/). FAA tail-number resolution uses [hangarbay](https://pypi.org/project/hangarbay/). Keep the basemap attribution in exported maps.
 
-FlightTracer is released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode).
+FlightTracer is released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode). The bundled [Inter](https://rsms.me/inter/) typeface (`flight_tracer/fonts/`) is by The Inter Project Authors and keeps its own [SIL Open Font License 1.1](https://github.com/stiles/flight-tracer/blob/main/flight_tracer/fonts/OFL.txt).

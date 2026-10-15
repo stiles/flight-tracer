@@ -181,5 +181,22 @@ class TestReadableDates(unittest.TestCase):
         self.assertIn("1:30 a.m. PDT–1:30 a.m. PST", span)
 
 
+class TestBundledFonts(unittest.TestCase):
+    def test_text_resolves_to_bundled_inter_in_both_weights(self):
+        from matplotlib.font_manager import FontProperties, findfont
+        from flight_tracer.viz import FONT_STACK, FONTS_DIR, register_bundled_fonts
+
+        register_bundled_fonts()  # Idempotent; must not duplicate entries.
+        for weight, filename in (("normal", "Inter-Regular.ttf"), ("bold", "Inter-Bold.ttf")):
+            path = findfont(FontProperties(family=FONT_STACK, weight=weight),
+                            fallback_to_default=False)
+            self.assertEqual(os.path.realpath(path),
+                             os.path.realpath(FONTS_DIR / filename))
+
+    def test_license_ships_with_fonts(self):
+        from flight_tracer.viz import FONTS_DIR
+        self.assertIn("SIL Open Font License", (FONTS_DIR / "OFL.txt").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

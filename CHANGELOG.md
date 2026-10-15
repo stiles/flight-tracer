@@ -9,6 +9,14 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Changed
+
+- Bundle Inter 4.1 (Regular and Bold, SIL OFL 1.1) in
+  `flight_tracer/fonts/` and register it at import, so maps and charts
+  render with the same typeface and text wrapping on every machine instead
+  of falling back to Arial or DejaVu Sans. The bundled copy takes priority
+  over a system-installed Inter.
+
 ## [0.3.2] - 2026-10-04
 
 ### Added
@@ -211,7 +219,7 @@ by real newsroom use.
   trace.
 - `flight_tracer.identify`: `parse_adsbx_url()`, `resolve_n_number()`,
   `resolve_timezone()`.
-- `flight_tracer.viz`: CNN-styled map and altitude/speed chart rendering,
+- `flight_tracer.viz`: Styled map and altitude/speed chart rendering,
   with a basemap fallback chain.
 - `--timezone auto`: infer the local zone from the trace's first position
   via `timezonefinder` (requires the `tz` extra), for when you want local
