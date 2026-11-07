@@ -2,15 +2,15 @@
 
 Turn an aircraft tail number, ICAO hex, or [ADS-B Exchange](https://globe.adsbexchange.com/) link into a flight map, altitude and speed charts and reusable data.
 
+> [!IMPORTANT]
+> **Status: historical traces are unavailable.** ADS-B Exchange now limits historical data to browsers that pass a human-verification check, so `--date`, `--start`/`--end` and `--url` return "HTTP 403: Historical data requires a verified session." Recent traces, roughly the last 24 hours, still work. Historical support is paused while other data sources are evaluated; see the [backlog](https://github.com/stiles/flight-tracer/blob/main/BACKLOG.md).
+
 ```bash
 pip install flight-tracer
 flight-tracer trace --icao a40442
 ```
 
-No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
-
-> [!WARNING]
-> ADS-B Exchange now limits historical traces to browsers that pass a human-verification check. From the command line, `--date`, `--start`/`--end` and `--url` fail with "HTTP 403: Historical data requires a verified session." Recent traces, covering roughly the last day, still work.
+No date means recent activity, roughly the last 24 hours. Historical dates are unavailable for now; see the status note above.
 
 <!-- Pinned to the commit that last touched this image, not `main` -- that
      way the URL itself changes whenever the image does, instead of relying
@@ -20,7 +20,7 @@ No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
      python scripts/docs_images.py --pin to update this SHA. -->
 ![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/6aaf4fa8b21d722686bc9ab514916ef67fafba44/docs/images/flight-map.png)
 
-*Example: An LAPD helicopter, N224LA, patrolling on an early Saturday morning.*
+*Example: An LAPD helicopter, N224LA, patrolling on an early Saturday morning. Rendered from a historical trace before ADS-B Exchange restricted access.*
 
 ## Start with what you have
 
@@ -28,13 +28,15 @@ No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
 |---|---|
 | ICAO hex | `flight-tracer trace --icao a40442` |
 | U.S. tail number | `flight-tracer trace --n-number N358TV` |
-| Historical date | `flight-tracer trace --icao a40442 --date 2026-09-16` |
-| ADS-B Exchange link | `flight-tracer trace --url "https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-01-26"` |
+| Historical date (unavailable for now) | `flight-tracer trace --icao a40442 --date 2026-09-16` |
+| ADS-B Exchange link with a date (unavailable for now) | `flight-tracer trace --url "https://globe.adsbexchange.com/?icao=a9a1ad&showTrace=2020-01-26"` |
 | Tail number to look up | `flight-tracer resolve --n-number N358TV` |
 
 Tail-number lookup requires `pip install "flight-tracer[faa]"`. A callsign such as `FDX9756` cannot currently be used as an input; first find the aircraft's ICAO hex or tail number for that flight and date.
 
 ## Common recipes
+
+Most recipes below use historical dates, which currently return HTTP 403. The display options (`--aspect-ratio`, `--background`, `--title`, `--label`, presets and `render`) work the same on a recent trace: drop the date arguments to try them.
 
 ### Fetch a date range and render every leg
 
