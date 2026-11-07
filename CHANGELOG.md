@@ -9,6 +9,8 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
 ### Changed
 
 - Require Python 3.10 or newer; 3.9 reached end of life in October 2025.
