@@ -14,6 +14,12 @@ declaring the API settled.
 - Require Python 3.10 or newer; 3.9 reached end of life in October 2025.
   Python 3.14 is now tested and listed as supported.
 
+### Fixed
+
+- Stop using two deprecated APIs: `shapely.ops.transform` (Date Line
+  wrapping) and building a DataFrame from rows of different lengths (older
+  trace archives). Output is unchanged.
+
 ## [0.4.2] - 2026-10-14
 
 ### Fixed

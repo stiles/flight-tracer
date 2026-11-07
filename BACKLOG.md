@@ -38,7 +38,7 @@ Callsign lookup by date needs a source investigation next. Checked items are imp
 - [ ] Maintain representative historical fixtures covering older record formats, missing leg flags, missing metadata and Date Line crossings.
 - [ ] Check installation and upgrades, optional dependencies and CLI entry points in supported Python environments.
 - [x] Refresh the Python support range. Implemented locally: 3.14 added to the CI matrix and classifiers, 3.9 dropped. 3.14 passes locally; CI hasn't run it yet.
-- [ ] Clear deprecation warnings before they become errors: Click's `isolated_filesystem` in `tests/test_coverage.py` (removed in Click 9) and the NumPy scalar-conversion warning raised through pyproj's transformer.
+- [x] Clear deprecation warnings. Implemented locally: Click's `isolated_filesystem`, `shapely.ops.transform` and the ragged-row DataFrame construction in `core.py`. The NumPy/pyproj warning no longer reproduces with current dependencies. Matplotlib 3.10.9 still emits its own NumPy timedelta warning.
 - [ ] Script docs image regeneration so every embedded image rebuilds with one command. Record the README hero's exact command (`--icao a1f0d8 --date 2026-10-03 --leg 4 --background mapbox-light --timezone America/Los_Angeles`; the nearby examples use a different aircraft, `a40442`), and pin the image URL to a commit SHA as the README comment intends — it currently points at `main`.
 
 See the [README](README.md) for currently supported features and the [changelog](CHANGELOG.md) for shipped changes.

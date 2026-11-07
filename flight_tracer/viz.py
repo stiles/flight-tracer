@@ -23,7 +23,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib import patheffects
 from shapely.geometry import Point
-from shapely.ops import transform
+import shapely
 
 from .geometry import route_geometry
 from .osm import bounds2img as osm_bounds2img
@@ -89,15 +89,17 @@ def _project_map_data(points, lines, marks=None):
         if gap_index != len(xs) - 1:
             left = xs[gap_index + 1]
 
-            def wrap(x, y, z=None):
-                x = np.asarray(x)
-                return np.where(x < left - 1e-6, x + WORLD_WIDTH, x), y
+            def wrap(coords):
+                coords = np.array(coords, dtype=float)
+                west = coords[:, 0] < left - 1e-6
+                coords[west, 0] += WORLD_WIDTH
+                return coords
 
-            projected.geometry = projected.geometry.apply(lambda geom: transform(wrap, geom))
+            projected.geometry = projected.geometry.apply(lambda geom: shapely.transform(geom, wrap))
             if routes is not None:
-                routes.geometry = routes.geometry.apply(lambda geom: transform(wrap, geom))
+                routes.geometry = routes.geometry.apply(lambda geom: shapely.transform(geom, wrap))
             if marks is not None:
-                marks.geometry = marks.geometry.apply(lambda geom: transform(wrap, geom))
+                marks.geometry = marks.geometry.apply(lambda geom: shapely.transform(geom, wrap))
     return projected, routes, marks
 
 

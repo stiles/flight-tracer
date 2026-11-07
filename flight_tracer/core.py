@@ -137,8 +137,9 @@ class FlightTracer:
         # Older archives stop after flags (seven fields); newer traces append
         # optional measurements. Preserve positional meanings and leave missing
         # measurements null, including when rows have different lengths.
-        trace_df = pd.DataFrame(data["trace"]).reindex(columns=range(len(TRACE_COLUMNS)))
-        trace_df.columns = TRACE_COLUMNS
+        width = len(TRACE_COLUMNS)
+        rows = [list(row)[:width] + [None] * (width - len(row)) for row in data["trace"]]
+        trace_df = pd.DataFrame(rows, columns=TRACE_COLUMNS)
         trace_df["registration"] = data.get("r")
         trace_df["model"] = data.get("t")
         trace_df["desc"] = data.get("desc")
