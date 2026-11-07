@@ -24,6 +24,9 @@ declaring the API settled.
 - Stop using two deprecated APIs: `shapely.ops.transform` (Date Line
   wrapping) and building a DataFrame from rows of different lengths (older
   trace archives). Output is unchanged.
+- Stop printing "findfont: Font family 'Roboto' not found" for every chart.
+  Fallback fonts that aren't installed are left out of the font list;
+  the bundled Inter still renders first.
 
 ## [0.4.2] - 2026-10-14
 

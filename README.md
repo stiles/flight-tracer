@@ -9,6 +9,9 @@ flight-tracer trace --icao a40442
 
 No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
 
+> [!WARNING]
+> ADS-B Exchange now limits historical traces to browsers that pass a human-verification check. From the command line, `--date`, `--start`/`--end` and `--url` fail with "HTTP 403: Historical data requires a verified session." Recent traces, covering roughly the last day, still work.
+
 <!-- Pinned to the commit that last touched this image, not `main` -- that
      way the URL itself changes whenever the image does, instead of relying
      on raw.githubusercontent.com's cache (and every viewer's browser cache)

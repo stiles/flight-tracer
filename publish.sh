@@ -9,6 +9,35 @@ set -e
 echo "Starting the flight-tracer publishing process..."
 echo "========================================="
 
+# --- 0. Prerequisite Check ---
+# Checked before anything is edited, so a missing tool can't leave a
+# half-bumped version behind. A bare python3 is often a global interpreter
+# without pytest, so prefer the active venv, then the project's .venv.
+echo "--- Checking Tools ---"
+if [ -n "$VIRTUAL_ENV" ]; then
+    PYTHON="$VIRTUAL_ENV/bin/python"
+elif [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+else
+    PYTHON="python3"
+fi
+command -v "$PYTHON" >/dev/null 2>&1 || { echo >&2 "Error: $PYTHON not found. Aborting."; exit 1; }
+echo "Using $PYTHON ($("$PYTHON" --version 2>&1))"
+
+# Import checks rather than `pip show`: uv venvs don't include pip.
+MISSING=""
+for module in pytest build flight_tracer; do
+    "$PYTHON" -c "import $module" >/dev/null 2>&1 || MISSING="$MISSING $module"
+done
+if [ -n "$MISSING" ]; then
+    echo >&2 "Error: missing from $PYTHON:$MISSING"
+    echo >&2 "Set up an environment with:"
+    echo >&2 "  uv venv .venv && uv pip install --python .venv -e \".[tz]\" pytest build"
+    exit 1
+fi
+HAS_GH=$(command -v gh >/dev/null 2>&1 && echo "true" || echo "false")
+echo "Required tools found."
+
 # --- 1. Version Management ---
 echo "--- Version Management ---"
 
@@ -93,7 +122,15 @@ if ! git diff-index --quiet HEAD --; then
 fi
 echo "Git status checked."
 
-# --- 3. Pre-flight Checklist ---
+# --- 3. Run Tests ---
+echo "--- Running Tests ---"
+if ! "$PYTHON" -m pytest tests/; then
+    echo "Error: Tests failed. Please fix the tests before publishing."
+    exit 1
+fi
+echo "Tests passed."
+
+# --- 4. Pre-flight Checklist ---
 echo "--- Pre-flight Checklist ---"
 
 if [ "$NEW_VERSION" != "$CURRENT_VERSION" ]; then
@@ -145,7 +182,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# --- 4. Final Confirmation ---
+# --- 5. Final Confirmation ---
 echo "--- Final Confirmation ---"
 echo "Ready to publish flight-tracer version $NEW_VERSION"
 echo "This will:"
@@ -162,22 +199,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# --- 5. Run Tests ---
-echo "--- Running Tests ---"
-if ! python3 -m pytest tests/; then
-    echo "Error: Tests failed. Please fix the tests before publishing."
-    exit 1
-fi
-echo "Tests passed."
-
-# --- 6. Prerequisite Check ---
-echo "--- Checking Tools ---"
-command -v python3 >/dev/null 2>&1 || { echo >&2 "Error: python3 is not installed. Aborting."; exit 1; }
-python3 -m pip show build >/dev/null 2>&1 || { echo >&2 "Error: 'build' is not installed. Run 'pip install build'. Aborting."; exit 1; }
-HAS_GH=$(command -v gh >/dev/null 2>&1 && echo "true" || echo "false")
-echo "Required tools found."
-
-# --- 7. Git Operations ---
+# --- 6. Git Operations ---
 echo "--- Git Operations ---"
 
 if [ "$NEW_VERSION" != "$CURRENT_VERSION" ]; then
@@ -196,16 +218,16 @@ git tag "$TAG"
 git push origin "$TAG"
 echo "Tag created and pushed."
 
-# --- 8. Build Package ---
+# --- 7. Build Package ---
 echo "--- Building Package ---"
 echo "Cleaning up previous builds..."
 rm -rf build dist flight_tracer.egg-info
 echo "Building the package..."
-python3 -m build
+"$PYTHON" -m build
 echo "Build complete. Files created:"
 ls -la dist/
 
-# --- 9. GitHub Release ---
+# --- 8. GitHub Release ---
 # Publishing to PyPI belongs to .github/workflows/publish.yml, which runs on
 # release. Uploading from here as well is how you end up with every Publish
 # run failing with "400 File already exists" after the package already went out.
@@ -240,7 +262,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     fi
 fi
 
-# --- 10. Summary ---
+# --- 9. Summary ---
 echo
 echo "========================================="
 echo "Publishing process completed!"

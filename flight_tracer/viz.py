@@ -251,7 +251,7 @@ def _wrap_text(fig, text, width, fontsize, weight="normal"):
     """Wrap using actual font metrics, rather than a guessed character count."""
     from matplotlib.font_manager import FontProperties
     renderer = fig.canvas.get_renderer()
-    font = FontProperties(family=FONT_STACK, size=fontsize, weight=weight)
+    font = FontProperties(family=installed_font_stack(), size=fontsize, weight=weight)
     max_width = width * fig.bbox.width
     lines = []
     for paragraph in str(text).splitlines():
@@ -357,6 +357,19 @@ def register_bundled_fonts():
         cached.cache_clear()
 
 
+def installed_font_stack():
+    """FONT_STACK without families this machine lacks.
+
+    matplotlib resolves every family in the list for glyph fallback and logs
+    "findfont: Font family ... not found" for each missing one, on every
+    text element.
+    """
+    from matplotlib import font_manager
+
+    installed = {font.name for font in font_manager.fontManager.ttflist}
+    return [name for name in FONT_STACK if name in installed] or FONT_STACK[-1:]
+
+
 def configure_style():
     try:
         register_bundled_fonts()
@@ -365,7 +378,7 @@ def configure_style():
         warnings.warn(f"Could not load bundled Inter fonts; falling back to {FONT_STACK[1:]}: {exc}")
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.sans-serif": FONT_STACK,
+        "font.sans-serif": installed_font_stack(),
         "text.color": COLOR_TEXT,
         "figure.facecolor": COLOR_BACKGROUND,
         "axes.facecolor": COLOR_BACKGROUND,

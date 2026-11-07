@@ -21,15 +21,18 @@ literal to forget.
 
 It walks through the following, stopping at any answer that isn't yes:
 
-1. Asks for the bump — patch, minor, major, custom or none — and refuses a
+1. Picks a Python: the active venv, then `.venv/bin/python`, then `python3`.
+   Checks that `pytest`, `build` and `flight_tracer` import from it and notes
+   whether `gh` is available.
+2. Asks for the bump — patch, minor, major, custom or none — and refuses a
    version whose tag already exists.
-2. Warns if the working directory is dirty.
-3. Rewrites `__version__` and adds a dated `## [X.Y.Z]` heading to
+3. Warns if the working directory is dirty.
+4. Runs `pytest tests/`. A failure aborts the release before any file is
+   edited.
+5. Rewrites `__version__` and adds a dated `## [X.Y.Z]` heading to
    `CHANGELOG.md` under `[Unreleased]`. Warns if that section is empty,
    because the release notes are pulled from it verbatim.
-4. Asks you to confirm the changelog, the testing and the docs.
-5. Runs `pytest tests/`. A failure aborts the release.
-6. Checks that `build` is installed and notes whether `gh` is available.
+6. Asks you to confirm the changelog, the testing and the docs.
 7. Commits `chore(release): vX.Y.Z`, pushes `main`, then tags and pushes
    `vX.Y.Z`.
 8. Cleans `build/`, `dist/` and `flight_tracer.egg-info/`, then builds.
@@ -47,7 +50,7 @@ gh run watch $(gh run list --workflow="Publish to PyPI" --limit 1 --json databas
 ## Prerequisites
 
 ```bash
-pip install build
+uv venv .venv && uv pip install --python .venv -e ".[tz]" pytest build
 brew install gh   # or https://cli.github.com/
 ```
 
