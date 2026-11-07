@@ -139,7 +139,7 @@ Running the same aircraft/date selection again writes to the same folder. Use a 
 
 ## Installation and upgrades
 
-Python 3.9 or newer is required. Optional extras add tail-number lookup and automatic timezone lookup:
+Python 3.10 or newer is required. Optional extras add tail-number lookup and automatic timezone lookup:
 
 ```bash
 pip install "flight-tracer[faa,tz]"

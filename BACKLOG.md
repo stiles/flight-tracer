@@ -37,7 +37,7 @@ Callsign lookup by date needs a source investigation next. Checked items are imp
 - [ ] Exercise provider failures and confirm clear errors, appropriate fallbacks and correct attribution.
 - [ ] Maintain representative historical fixtures covering older record formats, missing leg flags, missing metadata and Date Line crossings.
 - [ ] Check installation and upgrades, optional dependencies and CLI entry points in supported Python environments.
-- [ ] Refresh the Python support range: add 3.14 to the CI matrix and classifiers, and consider dropping 3.9 (end of life October 2025).
+- [x] Refresh the Python support range. Implemented locally: 3.14 added to the CI matrix and classifiers, 3.9 dropped. 3.14 passes locally; CI hasn't run it yet.
 - [ ] Clear deprecation warnings before they become errors: Click's `isolated_filesystem` in `tests/test_coverage.py` (removed in Click 9) and the NumPy scalar-conversion warning raised through pyproj's transformer.
 - [ ] Script docs image regeneration so every embedded image rebuilds with one command. Record the README hero's exact command (`--icao a1f0d8 --date 2026-10-03 --leg 4 --background mapbox-light --timezone America/Los_Angeles`; the nearby examples use a different aircraft, `a40442`), and pin the image URL to a commit SHA as the README comment intends — it currently points at `main`.
 

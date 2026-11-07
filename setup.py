@@ -57,18 +57,18 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "License :: Public Domain",
         "Operating System :: OS Independent",
     ],
     license="CC0-1.0",
     # geopandas and contextily's current releases don't support anything
     # older; >=3.7 hadn't been true for a while.
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     entry_points={
     "console_scripts": [
         "flight-tracer=flight_tracer.cli:cli",
