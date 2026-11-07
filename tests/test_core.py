@@ -35,6 +35,37 @@ class TestFetchTraceData(unittest.TestCase):
                     self.assertEqual(processed.iloc[0]["call_sign"], "TEST123")
 
 
+class TestFetchFailures(unittest.TestCase):
+    def fetch(self, status, text=""):
+        tracer = FlightTracer(aircraft_ids=["a40442"])
+        response = Mock(status_code=status, text=text)
+        with patch("flight_tracer.core.requests.get", return_value=response):
+            return tracer, tracer.fetch_trace_data("https://example.com/t.json", "a40442")
+
+    def test_blocked_session_is_reported_with_status_and_message(self):
+        tracer, raw = self.fetch(403, "Historical data requires a verified session.")
+        self.assertIsNone(raw)
+        self.assertEqual(tracer.last_fetch_error,
+                         "HTTP 403: Historical data requires a verified session.")
+
+    def test_missing_day_is_not_an_error(self):
+        tracer, raw = self.fetch(404)
+        self.assertIsNone(raw)
+        self.assertIsNone(tracer.last_fetch_error)
+
+    def test_get_traces_names_the_failure_instead_of_no_data(self):
+        for status, expected in ((403, "could not fetch a40442: ADS-B Exchange returned HTTP 403"),
+                                 (404, "no data for a40442")):
+            with self.subTest(status=status):
+                tracer = FlightTracer(aircraft_ids=["a40442"])
+                response = Mock(status_code=status, text="blocked")
+                with patch("flight_tracer.core.requests.get", return_value=response), \
+                     patch("builtins.print") as out:
+                    tracer.get_traces(date(2026, 9, 15), date(2026, 9, 15))
+                printed = " ".join(str(call.args[0]) for call in out.call_args_list)
+                self.assertIn(expected, printed)
+
+
 class TestGenerateUrls(unittest.TestCase):
     def test_generate_urls_single_day(self):
         tracer = FlightTracer(aircraft_ids=["0d086e"])

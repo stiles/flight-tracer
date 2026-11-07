@@ -12,10 +12,10 @@ No date means recent activity. For a historical flight, add `--date YYYY-MM-DD`.
 <!-- Pinned to the commit that last touched this image, not `main` -- that
      way the URL itself changes whenever the image does, instead of relying
      on raw.githubusercontent.com's cache (and every viewer's browser cache)
-     to expire before anyone sees the new one. Whenever you replace
-     flight-map.png, update this SHA to the new commit:
-     git log -1 --format=%H -- docs/images/flight-map.png -->
-![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/refs/heads/main/docs/images/flight-map.png)
+     to expire before anyone sees the new one. To replace flight-map.png, run
+     python scripts/docs_images.py, commit the image, then run
+     python scripts/docs_images.py --pin to update this SHA. -->
+![Example flight map over Los Angeles, with start and last-location markers](https://raw.githubusercontent.com/stiles/flight-tracer/6aaf4fa8b21d722686bc9ab514916ef67fafba44/docs/images/flight-map.png)
 
 *Example: An LAPD helicopter, N224LA, patrolling on an early Saturday morning.*
 

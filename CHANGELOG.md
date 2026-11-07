@@ -16,6 +16,11 @@ declaring the API settled.
 
 ### Fixed
 
+- Say why a fetch failed. A 403, 429 or server error from ADS-B Exchange
+  used to print "no data for ICAO", the same as a day with no flights; it
+  now prints the HTTP status and the first words of the response, such as
+  "HTTP 403: Historical data requires a verified session." A 404 still
+  reads "no data".
 - Stop using two deprecated APIs: `shapely.ops.transform` (Date Line
   wrapping) and building a DataFrame from rows of different lengths (older
   trace archives). Output is unchanged.
