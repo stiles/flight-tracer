@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 
 import click
+import pandas as pd
 
 from flight_tracer import __version__
 from flight_tracer.annotations import (make_annotations, merge_annotations, parse_label,
@@ -54,6 +55,57 @@ def _resolve_targets(icao, n_number, url):
         raise click.UsageError("Provide at least one of --icao, --n-number or --url.")
 
     return targets, date_hint
+
+
+def _fetch_traces(icao, n_number, url, start, end, date, recent, window_start, window_end):
+    """Resolve the aircraft and dates to fetch, then fetch them from ADS-B Exchange.
+
+    Returns (raw_df, icaos, start_date, end_date, use_recent).
+    """
+    targets, date_hint = _resolve_targets(icao, n_number, url)
+    icaos = [t[0] for t in targets]
+
+    if date:
+        start_date, end_date = date.date(), date.date()
+    elif start or end:
+        start_date = (start or end).date()
+        end_date = (end or start).date()
+    elif date_hint and not recent:
+        start_date, end_date = date_hint, date_hint
+    elif (window_start is not None or window_end is not None) and not recent:
+        start_date = (window_start if window_start is not None else window_end).date()
+        end_date = (window_end if window_end is not None else window_start).date()
+    else:
+        start_date, end_date = None, None
+
+    use_recent = recent or start_date is None
+    raw_df = FlightTracer(aircraft_ids=icaos).get_traces(start_date, end_date, recent=use_recent)
+    return raw_df, icaos, start_date, end_date, use_recent
+
+
+def _load_local_traces(paths, conflicts=False):
+    """Read saved trace files instead of fetching.
+
+    Returns (raw_df, icaos, start_date, end_date), with the dates taken from
+    the trace's own UTC timestamps so the output folder is named the same
+    way a fetched historical run would be.
+    """
+    if conflicts:
+        raise click.UsageError("--local reads the aircraft and dates from the file; "
+                               "don't combine it with --icao, --n-number, --url, --date, --start, --end or --recent.")
+    traces = []
+    for path in paths:
+        try:
+            trace_df = FlightTracer.load_trace_file(path)
+        except (OSError, ValueError) as exc:
+            raise click.ClickException(str(exc)) from None
+        click.echo(f"Read {len(trace_df):,} points for {trace_df['icao'].iloc[0]} from {path}")
+        traces.append(trace_df)
+
+    raw_df = pd.concat(traces, ignore_index=True).sort_values("point_time_utc").reset_index(drop=True)
+    icaos = sorted(raw_df["icao"].unique())
+    times = raw_df["point_time_utc"].dropna()
+    return raw_df, icaos, times.min().date(), times.max().date()
 
 
 def _print_leg_table(legs):
@@ -292,6 +344,9 @@ def _preset_option(direct=None):
 @click.option("--icao", multiple=True, help="ICAO hex code of the aircraft. Repeatable.")
 @click.option("--n-number", multiple=True, help="FAA tail number (e.g. N358TV). Resolved via hangarbay. Repeatable.")
 @click.option("--url", default=None, help="A globe.adsbexchange.com URL to parse for the ICAO hex and replay or showTrace date.")
+@click.option("--local", "local_paths", multiple=True, type=click.Path(exists=True, dir_okay=False),
+              help="A saved trace_full_<icao>.json file (plain or gzipped) to use instead of fetching. "
+                   "Repeatable for several days of one aircraft.")
 @click.option("--start", type=click.DateTime(formats=["%Y-%m-%d"]), help="Start date (YYYY-MM-DD).")
 @click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD).")
 @click.option("--date", type=click.DateTime(formats=["%Y-%m-%d"]), help="Shorthand for --start/--end on the same day.")
@@ -324,7 +379,7 @@ def _preset_option(direct=None):
 @_preset_option()
 @click.option("--bucket", default=None, help="If set, upload the output folder to this S3 bucket.")
 @click.option("--aws-profile", default=None, help="AWS profile to use for --bucket uploads.")
-def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
+def trace(icao, n_number, url, local_paths, start, end, date, recent, leg, timezone, output,
           filter_ground, background, formats, no_plots, bucket, aws_profile, gap_minutes, aspect_ratio,
           after, before, window_timezone, infer_legs, title, dek, labels, preset):
     """Fetch, process, map and summarize a flight trace in one step.
@@ -334,6 +389,7 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
         flight-tracer trace --n-number N358TV
         flight-tracer trace --icao a40442
         flight-tracer trace --url "https://globe.adsbexchange.com/?replay=...&icao=a40442"
+        flight-tracer trace --local ~/Downloads/trace_full_ac4888.json
 
     With no date given, defaults to ADS-B Exchange's recent-trace endpoint
     (roughly the last few hours to a few days) -- the breaking-news case.
@@ -354,31 +410,20 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
             resolve_basemap(background)
         except ValueError as exc:
             raise click.ClickException(str(exc)) from None
-    targets, date_hint = _resolve_targets(icao, n_number, url)
-    icaos = [t[0] for t in targets]
 
-    if date:
-        start_date, end_date = date.date(), date.date()
-    elif start or end:
-        start_date = (start or end).date()
-        end_date = (end or start).date()
-    elif date_hint and not recent:
-        start_date, end_date = date_hint, date_hint
-    elif (window_start is not None or window_end is not None) and not recent:
-        start_date = (window_start if window_start is not None else window_end).date()
-        end_date = (window_end if window_end is not None else window_start).date()
+    if local_paths:
+        raw_df, icaos, start_date, end_date = _load_local_traces(
+            local_paths, conflicts=icao or n_number or url or date or start or end or recent)
+        use_recent = False
     else:
-        start_date, end_date = None, None
-
-    use_recent = recent or start_date is None
-
-    tracer = FlightTracer(aircraft_ids=icaos)
-    raw_df = tracer.get_traces(start_date, end_date, recent=use_recent)
+        raw_df, icaos, start_date, end_date, use_recent = _fetch_traces(
+            icao, n_number, url, start, end, date, recent, window_start, window_end)
 
     if raw_df.empty:
         click.echo("No trace data found. If this is an older flight, try --start/--end for the date it happened.")
         return
 
+    tracer = FlightTracer(aircraft_ids=icaos)
     if timezone and timezone.lower() == "auto":
         first_point = raw_df.dropna(subset=["lat", "lon"]).iloc[0]
         resolved_timezone = resolve_timezone("auto", lat=first_point["lat"], lon=first_point["lon"])
@@ -436,7 +481,8 @@ def trace(icao, n_number, url, start, end, date, recent, leg, timezone, output,
                    "before_utc": str(window_end) if window_end is not None else None,
                    "bounds_inclusive": True, "window_timezone": window_timezone,
                    "infer_legs": infer_legs, "leg": leg_choice,
-                   "filter_ground": filter_ground, "preset": preset}, handle, indent=2)
+                   "filter_ground": filter_ground, "preset": preset,
+                   "local_files": [os.path.abspath(p) for p in local_paths] or None}, handle, indent=2)
     written["selection"] = selection_path
     written["annotations"] = write_annotations(output_dir, annotations)
     click.echo(f"\nWrote {len(written)} files to {output_dir}/")

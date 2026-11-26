@@ -9,6 +9,16 @@ declaring the API settled.
 
 ## [Unreleased]
 
+### Added
+
+- Add `trace --local PATH` to render a saved `trace_full_<icao>.json`
+  file, plain or gzipped, without fetching. It writes the same map,
+  charts, CSV, GeoJSON and summary as a fetched run, which makes
+  historical traces usable again while ADS-B Exchange blocks
+  `globe_history` requests. Repeatable for several days of one aircraft.
+  `FlightTracer.load_trace_file()` and `FlightTracer.parse_trace()` expose
+  the same reading from Python.
+
 ## [0.5.0] - 2026-11-07
 
 ### Changed

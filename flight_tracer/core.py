@@ -12,7 +12,10 @@ a time-gap heuristic:
     flags & 8  ->  altitude is geometric, not barometric
 """
 
+import gzip
+import json
 import os
+import re
 import warnings
 from datetime import timedelta
 from io import BytesIO
@@ -141,7 +144,11 @@ class FlightTracer:
         if response.status_code != 200:
             return None
 
-        data = response.json()
+        return self.parse_trace(response.json(), icao)
+
+    @staticmethod
+    def parse_trace(data, icao):
+        """Turn a decoded trace_full JSON object into a raw trace DataFrame, or None."""
         if not data or "trace" not in data or not data["trace"]:
             return None
 
@@ -161,6 +168,37 @@ class FlightTracer:
         trace_df["point_time_utc"] = base_time + pd.to_timedelta(
             pd.to_numeric(trace_df["seconds_after_timestamp"], errors="coerce"), unit="s"
         )
+        return trace_df
+
+    @classmethod
+    def load_trace_file(cls, path):
+        """Read a saved trace_full JSON file (plain or gzipped) into a raw trace DataFrame.
+
+        The ICAO hex comes from the file's own `icao` field, falling back to
+        a `trace_full_<icao>.json` filename. Raises ValueError if the file
+        isn't a usable trace.
+        """
+        with open(path, "rb") as handle:
+            raw = handle.read()
+        if raw[:2] == b"\x1f\x8b":
+            raw = gzip.decompress(raw)
+        try:
+            data = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(f"{path} is not valid JSON: {exc}") from None
+        if not isinstance(data, dict) or "timestamp" not in data:
+            raise ValueError(f"{path} is not an ADS-B Exchange trace file (no 'timestamp' field).")
+
+        icao = data.get("icao")
+        if not icao:
+            match = re.match(r"trace_full_(~?[0-9a-f]{6})", os.path.basename(path), re.IGNORECASE)
+            if not match:
+                raise ValueError(f"{path} has no 'icao' field and its name isn't trace_full_<icao>.json.")
+            icao = match.group(1)
+
+        trace_df = cls.parse_trace(data, icao.strip().lower())
+        if trace_df is None:
+            raise ValueError(f"{path} contains no trace points.")
         return trace_df
 
     def get_traces(self, start_date=None, end_date=None, recent=False):

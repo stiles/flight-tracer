@@ -18,6 +18,7 @@ flight-tracer trace
   --icao HEX              ICAO hex code. Repeatable.
   --n-number TAIL          FAA tail number, e.g. N358TV. Repeatable. Requires flight-tracer[faa].
   --url URL                A globe.adsbexchange.com URL to parse.
+  --local PATH             A saved trace_full_<icao>.json file (plain or gzipped) instead of fetching. Repeatable.
   --start / --end DATE     Historical date range (YYYY-MM-DD).
   --date DATE              Shorthand for --start/--end on the same day.
   --recent                 Force the recent-trace endpoint even if a date was found or given.
@@ -59,6 +60,10 @@ flight-tracer resolve --n-number TAIL
 ```
 
 Historical ranges include both dates. `--date` takes precedence over `--start`/`--end`, which take precedence over the URL date. `--recent` forces the recent endpoint. If only `--start` or `--end` is supplied, that date is used for both. Dates select UTC archive files; `--timezone` changes display times, not which files are fetched.
+
+## Local trace files
+
+`--local` reads a trace file you already have, such as one saved from the ADS-B Exchange site or downloaded from another archive in the same format, and writes the same outputs as a fetched run. Gzipped files are read too. The aircraft comes from the file's `icao` field, or from a `trace_full_<icao>.json` filename when the field is missing, and the output folder is named from the trace's first and last UTC dates. Pass `--local` once per file to combine several days of one aircraft. It can't be combined with `--icao`, `--n-number`, `--url`, `--date`, `--start`, `--end` or `--recent`; time windows, leg selection and every display option work as usual. `selection.json` records the files' paths under `local_files`.
 
 ## Data quality
 
