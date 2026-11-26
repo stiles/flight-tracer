@@ -104,6 +104,7 @@ This writes locally, then uploads the output folder using your configured AWS cr
 | Symptom | Try |
 |---|---|
 | No recent trace data | Add `--date YYYY-MM-DD` for the flight's UTC date. |
+| `HTTP 403: Historical data requires a verified session` | ADS-B Exchange limits historical traces to browsers that pass a human-verification check. Only recent traces work from the command line for now. |
 | No airborne points | Add `--keep-ground` to inspect ground reports. |
 | `14 columns passed, passed data had 7 columns` | Update FlightTracer; the parser now supports older archives. For a local checkout, install with `pip install --no-deps -e .`. |
 | `--leg latest` still shows several flights | The archive may lack leg flags; use `--after` / `--before` or try `--infer-legs`. |

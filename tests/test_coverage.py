@@ -1,3 +1,6 @@
+import contextlib
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +15,18 @@ from flight_tracer.viz import (
     COLOR_FLIGHT, WORLD_WIDTH, _coverage_segments, _draw_coverage,
     _project_map_data, plot_map,
 )
+
+
+@contextlib.contextmanager
+def scratch_directory():
+    """Run in a throwaway working directory, restoring the old one after."""
+    original = os.getcwd()
+    with tempfile.TemporaryDirectory() as folder:
+        os.chdir(folder)
+        try:
+            yield folder
+        finally:
+            os.chdir(original)
 
 
 class TestCoverage(unittest.TestCase):
@@ -76,7 +91,7 @@ class TestCoverage(unittest.TestCase):
             if multiple:
                 points.loc[2:, "leg_id"] = 2
             renderer = "_render_all_legs" if multiple else "_render_flight"
-            with CliRunner().isolated_filesystem(), \
+            with scratch_directory(), \
                  patch("flight_tracer.cli.FlightTracer.get_traces", return_value=points), \
                  patch("flight_tracer.cli.FlightTracer.process_flight_data", return_value=points), \
                  patch("flight_tracer.cli." + renderer, return_value={}) as render:

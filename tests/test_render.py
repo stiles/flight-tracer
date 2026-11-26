@@ -40,14 +40,16 @@ class TestRender(unittest.TestCase):
     def test_render_writes_images_elsewhere_and_leaves_data_alone(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as out:
             write_run(folder)
-            before = open(os.path.join(folder, "trace.csv")).read()
+            with open(os.path.join(folder, "trace.csv")) as f:
+                before = f.read()
             with patch("flight_tracer.cli._plot_flight", return_value={"map": "m"}) as plot:
                 result = CliRunner().invoke(cli, ["render", folder, "--output", out,
                                                   "--aspect-ratio", "9:16", "--timezone", "utc"])
             self.assertEqual(result.exit_code, 0, result.output)
             self.assertEqual(plot.call_args.args[3], out)
             self.assertEqual(plot.call_args.args[-1], "9:16")
-            self.assertEqual(open(os.path.join(folder, "trace.csv")).read(), before)
+            with open(os.path.join(folder, "trace.csv")) as f:
+                self.assertEqual(f.read(), before)
             self.assertEqual(sorted(os.listdir(folder)), ["trace.csv"])
 
     def test_render_rejects_missing_csv_and_mapbox_token(self):

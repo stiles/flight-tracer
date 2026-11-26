@@ -9,6 +9,27 @@ declaring the API settled.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
+### Changed
+
+- Require Python 3.10 or newer; 3.9 reached end of life in October 2025.
+  Python 3.14 is now tested and listed as supported.
+
+### Fixed
+
+- Say why a fetch failed. A 403, 429 or server error from ADS-B Exchange
+  used to print "no data for ICAO", the same as a day with no flights; it
+  now prints the HTTP status and the first words of the response, such as
+  "HTTP 403: Historical data requires a verified session." A 404 still
+  reads "no data".
+- Stop using two deprecated APIs: `shapely.ops.transform` (Date Line
+  wrapping) and building a DataFrame from rows of different lengths (older
+  trace archives). Output is unchanged.
+- Stop printing "findfont: Font family 'Roboto' not found" for every chart.
+  Fallback fonts that aren't installed are left out of the font list;
+  the bundled Inter still renders first.
+
 ## [0.4.2] - 2026-10-14
 
 ### Fixed

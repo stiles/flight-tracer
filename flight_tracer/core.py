@@ -82,6 +82,10 @@ class FlightTracer:
         else:
             self.s3_client = None
 
+        # Why the last fetch_trace_data call returned nothing, when it was a
+        # fetch failure rather than an empty day; None otherwise.
+        self.last_fetch_error = None
+
     # ------------------------------------------------------------------
     # Fetching
     # ------------------------------------------------------------------
@@ -127,6 +131,13 @@ class FlightTracer:
         """Fetch and return a raw trace DataFrame from a given URL, or None."""
         headers = {"Referer": f"https://globe.adsbexchange.com/?icao={icao}"}
         response = requests.get(url, headers=headers, timeout=30)
+        # A 404 means ADS-B Exchange has no trace for that day. Anything else
+        # (403 for a blocked session, 429, 5xx) is a failure to fetch, which
+        # callers should not mistake for a quiet day.
+        self.last_fetch_error = None
+        if response.status_code not in (200, 404):
+            detail = " ".join((response.text or "").split())[:120]
+            self.last_fetch_error = f"HTTP {response.status_code}" + (f": {detail}" if detail else "")
         if response.status_code != 200:
             return None
 
@@ -137,8 +148,9 @@ class FlightTracer:
         # Older archives stop after flags (seven fields); newer traces append
         # optional measurements. Preserve positional meanings and leave missing
         # measurements null, including when rows have different lengths.
-        trace_df = pd.DataFrame(data["trace"]).reindex(columns=range(len(TRACE_COLUMNS)))
-        trace_df.columns = TRACE_COLUMNS
+        width = len(TRACE_COLUMNS)
+        rows = [list(row)[:width] + [None] * (width - len(row)) for row in data["trace"]]
+        trace_df = pd.DataFrame(rows, columns=TRACE_COLUMNS)
         trace_df["registration"] = data.get("r")
         trace_df["model"] = data.get("t")
         trace_df["desc"] = data.get("desc")
@@ -172,6 +184,8 @@ class FlightTracer:
             if trace_df is not None and not trace_df.empty:
                 traces.append(trace_df)
                 print(f"  found {len(trace_df):,} points for {icao}")
+            elif self.last_fetch_error:
+                print(f"  could not fetch {icao}: ADS-B Exchange returned {self.last_fetch_error}")
             else:
                 print(f"  no data for {icao}")
 

@@ -23,7 +23,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib import patheffects
 from shapely.geometry import Point
-from shapely.ops import transform
+import shapely
 
 from .geometry import route_geometry
 from .osm import bounds2img as osm_bounds2img
@@ -89,15 +89,17 @@ def _project_map_data(points, lines, marks=None):
         if gap_index != len(xs) - 1:
             left = xs[gap_index + 1]
 
-            def wrap(x, y, z=None):
-                x = np.asarray(x)
-                return np.where(x < left - 1e-6, x + WORLD_WIDTH, x), y
+            def wrap(coords):
+                coords = np.array(coords, dtype=float)
+                west = coords[:, 0] < left - 1e-6
+                coords[west, 0] += WORLD_WIDTH
+                return coords
 
-            projected.geometry = projected.geometry.apply(lambda geom: transform(wrap, geom))
+            projected.geometry = projected.geometry.apply(lambda geom: shapely.transform(geom, wrap))
             if routes is not None:
-                routes.geometry = routes.geometry.apply(lambda geom: transform(wrap, geom))
+                routes.geometry = routes.geometry.apply(lambda geom: shapely.transform(geom, wrap))
             if marks is not None:
-                marks.geometry = marks.geometry.apply(lambda geom: transform(wrap, geom))
+                marks.geometry = marks.geometry.apply(lambda geom: shapely.transform(geom, wrap))
     return projected, routes, marks
 
 
@@ -249,7 +251,7 @@ def _wrap_text(fig, text, width, fontsize, weight="normal"):
     """Wrap using actual font metrics, rather than a guessed character count."""
     from matplotlib.font_manager import FontProperties
     renderer = fig.canvas.get_renderer()
-    font = FontProperties(family=FONT_STACK, size=fontsize, weight=weight)
+    font = FontProperties(family=installed_font_stack(), size=fontsize, weight=weight)
     max_width = width * fig.bbox.width
     lines = []
     for paragraph in str(text).splitlines():
@@ -355,6 +357,19 @@ def register_bundled_fonts():
         cached.cache_clear()
 
 
+def installed_font_stack():
+    """FONT_STACK without families this machine lacks.
+
+    matplotlib resolves every family in the list for glyph fallback and logs
+    "findfont: Font family ... not found" for each missing one, on every
+    text element.
+    """
+    from matplotlib import font_manager
+
+    installed = {font.name for font in font_manager.fontManager.ttflist}
+    return [name for name in FONT_STACK if name in installed] or FONT_STACK[-1:]
+
+
 def configure_style():
     try:
         register_bundled_fonts()
@@ -363,7 +378,7 @@ def configure_style():
         warnings.warn(f"Could not load bundled Inter fonts; falling back to {FONT_STACK[1:]}: {exc}")
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.sans-serif": FONT_STACK,
+        "font.sans-serif": installed_font_stack(),
         "text.color": COLOR_TEXT,
         "figure.facecolor": COLOR_BACKGROUND,
         "axes.facecolor": COLOR_BACKGROUND,
