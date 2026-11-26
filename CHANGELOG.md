@@ -24,9 +24,10 @@ declaring the API settled.
 - List legs in the overview legend in flight order, reading left to
   right across wrapped rows. They were sorted by callsign, so a day's
   last flight could be listed first.
-- Stop reusing colors on overviews with more than six legs. Legs beyond
-  the categorical palette now step through a cool-to-warm ramp in flight
-  order, so each leg has its own color.
+- Stop reusing colors on overviews with more than six legs. The
+  categorical palette adds forest green and orchid, so up to eight legs
+  get fully distinct colors; legs beyond that step through a cool-to-warm
+  ramp in flight order, so each leg still has its own color.
 
 ## [0.5.0] - 2026-11-07
 

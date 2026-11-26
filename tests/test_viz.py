@@ -232,6 +232,11 @@ class TestOverviewLegs(unittest.TestCase):
         finally:
             plt.close(fig)
 
+    def test_palette_covers_eight_legs_before_ramping(self):
+        from flight_tracer.viz import CATEGORY_COLORS, leg_colors
+        self.assertEqual(leg_colors(8), CATEGORY_COLORS)
+        self.assertEqual(len(set(leg_colors(12))), 12)
+
 
 class TestEndpointMarkers(unittest.TestCase):
     def _labels(self, end_offset_m):

@@ -180,6 +180,8 @@ CATEGORY_COLORS = [
     "#8756A6",  # Violet
     "#B54268",  # Raspberry
     "#8A7018",  # Ochre
+    "#246C30",  # Forest green
+    "#CC44A0",  # Orchid
 ]
 
 # More legs than CATEGORY_COLORS would repeat colors, so they step through
