@@ -198,6 +198,41 @@ class TestBundledFonts(unittest.TestCase):
         self.assertIn("SIL Open Font License", (FONTS_DIR / "OFL.txt").read_text())
 
 
+class TestOverviewLegs(unittest.TestCase):
+    def test_legend_reads_in_flight_order_with_a_color_per_leg(self):
+        # Callsigns sort opposite to flight order, and more legs than the
+        # categorical palette, so the legend wraps and colors would repeat.
+        legs = 9
+        names = [f"Z{legs - n}" for n in range(legs)]
+        gdf = gpd.GeoDataFrame(
+            {
+                "point_time_utc": pd.date_range("2026-11-16", periods=legs * 2, freq="1min", tz="UTC"),
+                "leg_id": [n // 2 + 1 for n in range(legs * 2)],
+                "flight_leg": [f"{names[n // 2]}_leg{n // 2 + 1}" for n in range(legs * 2)],
+            },
+            geometry=[Point(-118 + n * 0.5, 34 + (n % 3) * 0.2) for n in range(legs * 2)],
+            crs="EPSG:4326",
+        )
+        labels = {f"{name}_leg{n + 1}": f"{name} – leg {n + 1}, Nov 16, 00:04 UTC" for n, name in enumerate(names)}
+        with patch("flight_tracer.viz._add_basemap", return_value=None), \
+             patch("flight_tracer.viz._save") as save:
+            plot_map(gdf, None, "Test", "", "ADS-B Exchange", "unused.png", leg_labels=labels)
+        fig = save.call_args.args[0]
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            texts = fig.legends[0].get_texts()
+            boxes = [t.get_window_extent(renderer) for t in texts]
+            self.assertGreater(len({round(b.y0) for b in boxes}), 1)  # wrapped onto several rows
+            reading = [t.get_text() for _, t in sorted(zip(boxes, texts),
+                                                       key=lambda pair: (-round(pair[0].y0), pair[0].x0))]
+            self.assertEqual(reading, [labels[f"{name}_leg{n + 1}"] for n, name in enumerate(names)])
+            colors = [tuple(c.get_facecolor()[0]) for c in fig.axes[0].collections[-legs:]]
+            self.assertEqual(len(set(colors)), legs)
+        finally:
+            plt.close(fig)
+
+
 class TestEndpointMarkers(unittest.TestCase):
     def _labels(self, end_offset_m):
         from flight_tracer.viz import _draw_endpoints

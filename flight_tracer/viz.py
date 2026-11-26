@@ -20,6 +20,7 @@ from xyzservices import TileProvider
 import pandas as pd
 import geopandas as gpd
 from matplotlib.collections import LineCollection
+from matplotlib.colors import LinearSegmentedColormap, to_hex
 from matplotlib.lines import Line2D
 from matplotlib import patheffects
 from shapely.geometry import Point
@@ -181,6 +182,11 @@ CATEGORY_COLORS = [
     "#8A7018",  # Ochre
 ]
 
+# More legs than CATEGORY_COLORS would repeat colors, so they step through
+# this cool-to-warm ramp in flight order instead: every leg stays distinct,
+# and earlier legs read cooler than later ones.
+LEG_RAMP = ["#2364AA", "#8756A6", "#B54268", "#C65D16"]
+
 # Inter ships with the package (flight_tracer/fonts, SIL OFL 1.1) so output
 # looks the same on every machine; the rest of the stack is only a fallback.
 FONT_STACK = ["Inter", "Roboto", "Helvetica Neue", "Arial", "DejaVu Sans"]
@@ -288,12 +294,41 @@ def _footer(fig, text):
     return artist, 0.02 + height + 0.12 / fig.get_figheight()
 
 
+def leg_colors(count):
+    """One color per leg, in flight order, never repeating."""
+    if count <= len(CATEGORY_COLORS):
+        return CATEGORY_COLORS[:count]
+    ramp = LinearSegmentedColormap.from_list("legs", LEG_RAMP)
+    return [to_hex(ramp(i / (count - 1))) for i in range(count)]
+
+
+def _leg_order(points):
+    """flight_leg values ordered by when each leg starts."""
+    if "flight_leg" not in points.columns:
+        return [None]
+    if "point_time_utc" in points.columns:
+        return points.groupby("flight_leg")["point_time_utc"].min().sort_values().index.tolist()
+    if "leg_id" in points.columns:
+        return points.groupby("flight_leg")["leg_id"].min().sort_values().index.tolist()
+    return points["flight_leg"].unique().tolist()
+
+
+def _row_major(items, columns):
+    """Reorder items so matplotlib's column-by-column legend fill reads across rows."""
+    rows = -(-len(items) // columns)
+    return [items[row * columns + col] for col in range(columns) for row in range(rows)
+            if row * columns + col < len(items)]
+
+
 def _map_legend(fig, handles, labels, bottom):
-    """Place a borderless key above the sources, wrapping to fit the frame."""
+    """Place a borderless key above the sources, wrapping to fit the frame.
+
+    Entries read left to right, then down, in the order given.
+    """
     labels = [_wrap_text(fig, label, 0.85, 8) for label in labels]
     for columns in range(len(labels), 0, -1):
         legend = fig.legend(
-            handles, labels, loc="lower left", bbox_to_anchor=(0.025, bottom),
+            _row_major(handles, columns), _row_major(labels, columns), loc="lower left", bbox_to_anchor=(0.025, bottom),
             bbox_transform=fig.transFigure, ncol=columns, fontsize=8,
             frameon=False, borderaxespad=0, borderpad=0,
             handlelength=1.4, handletextpad=0.5, columnspacing=1.8,
@@ -512,9 +547,9 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
     left, right = 0.025, 0.975
     ax = fig.add_axes([left, bottom, right - left, top - bottom])
 
-    legs = points_3857["flight_leg"].unique() if "flight_leg" in points_3857.columns else [None]
+    legs = _leg_order(points_3857)
     multi_leg = len(legs) > 1
-    colors = {leg: CATEGORY_COLORS[i % len(CATEGORY_COLORS)] for i, leg in enumerate(legs)}
+    colors = dict(zip(legs, leg_colors(len(legs))))
 
     if lines_3857 is not None and has_times:
         _draw_coverage(ax, lines_3857, colors, multi_leg)
@@ -530,9 +565,9 @@ def plot_map(gdf_points, gdf_lines, headline, dek, source, output_path,
         # Multi-leg overview: legend by flight (a color swatch per leg),
         # not by first/last contact -- which flight is which matters more
         # here than where the whole tracked window happened to start or end.
-        sort_col = "point_time_utc" if "point_time_utc" in points_3857.columns else points_3857.columns[0]
-        for leg, group in points_3857.groupby("flight_leg"):
-            leg_start = group.sort_values(sort_col).iloc[0]
+        for leg in legs:
+            group = points_3857[points_3857["flight_leg"] == leg]
+            leg_start = group.sort_values("point_time_utc").iloc[0] if has_times else group.iloc[0]
             color = colors.get(leg, COLOR_FLIGHT)
             ax.scatter([leg_start.geometry.x], [leg_start.geometry.y], s=ENDPOINT_SIZE, color=color,
                        edgecolor="white", linewidth=ENDPOINT_EDGE, zorder=5,

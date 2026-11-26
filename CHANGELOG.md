@@ -19,6 +19,15 @@ declaring the API settled.
   `FlightTracer.load_trace_file()` and `FlightTracer.parse_trace()` expose
   the same reading from Python.
 
+### Fixed
+
+- List legs in the overview legend in flight order, reading left to
+  right across wrapped rows. They were sorted by callsign, so a day's
+  last flight could be listed first.
+- Stop reusing colors on overviews with more than six legs. Legs beyond
+  the categorical palette now step through a cool-to-warm ramp in flight
+  order, so each leg has its own color.
+
 ## [0.5.0] - 2026-11-07
 
 ### Changed
